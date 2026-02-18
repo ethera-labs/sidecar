@@ -161,7 +161,13 @@ mod tests {
             .parse()
             .unwrap();
         let mut base = StateOverride::default();
-        base.insert(addr, AccountOverride { nonce: Some(1), ..Default::default() });
+        base.insert(
+            addr,
+            AccountOverride {
+                nonce: Some(1),
+                ..Default::default()
+            },
+        );
         let mut other = StateOverride::default();
         other.insert(
             addr,

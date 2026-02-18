@@ -64,7 +64,9 @@ impl RpcSimulator {
             .recover_signer()
             .map_err(|e| SimulationError::Other(format!("failed to recover signer: {e}")))?;
 
-        let mut tx_request = TransactionRequest::default().from(from).gas_limit(signed.gas_limit());
+        let mut tx_request = TransactionRequest::default()
+            .from(from)
+            .gas_limit(signed.gas_limit());
 
         if let Some(to) = signed.to() {
             tx_request = tx_request.to(to);
@@ -133,9 +135,8 @@ impl RpcSimulator {
         trace: &Value,
         chain_id: ChainId,
     ) -> (Vec<CrossRollupDependency>, Vec<CrossRollupMessage>) {
-        let mailbox_addr = match self.mailbox_address {
-            Some(addr) => addr,
-            None => return (Vec::new(), Vec::new()),
+        let Some(mailbox_addr) = self.mailbox_address else {
+            return (Vec::new(), Vec::new());
         };
 
         let parsed = compose_mailbox::parser::parse_call_trace(trace, mailbox_addr, chain_id);

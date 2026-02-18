@@ -7,8 +7,8 @@ use async_trait::async_trait;
 use tokio::sync::RwLock;
 use tracing::debug;
 
-use compose_primitives_traits::CoordinatorError;
 use crate::traits::decision::DecisionHandler;
+use compose_primitives_traits::CoordinatorError;
 
 /// Tracks vote state per instance for standalone decision-making.
 #[derive(Debug, Default)]

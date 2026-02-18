@@ -8,8 +8,8 @@ use compose_proto::rollup_v2::StartInstance;
 use tracing::{info, warn};
 
 use crate::coordinator::DefaultCoordinator;
-use compose_primitives_traits::CoordinatorError;
 use crate::model::pending_xt::PendingXt;
+use compose_primitives_traits::CoordinatorError;
 
 impl DefaultCoordinator {
     /// Process a new instance from the publisher. Validates the period and

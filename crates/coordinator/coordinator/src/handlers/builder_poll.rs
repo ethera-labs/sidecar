@@ -5,9 +5,9 @@ use compose_primitives::{BuilderPollRequest, BuilderPollResponse, ChainId, Chain
 use tracing::{debug, error, info};
 
 use crate::coordinator::DefaultCoordinator;
-use compose_primitives_traits::CoordinatorError;
 use crate::model::ordering::xt_less;
 use crate::pipeline::delivery::{build_transaction_payloads, deps_for_chain, DeliverableXt};
+use compose_primitives_traits::CoordinatorError;
 
 impl DefaultCoordinator {
     /// Process a builder poll from op-rbuilder. Returns committed transactions
@@ -57,7 +57,9 @@ impl DefaultCoordinator {
 
         let (entries, undecided_info) = {
             let mut state = self.state.write().await;
-            state.chain_states.insert(req.chain_id, state_snapshot.clone());
+            state
+                .chain_states
+                .insert(req.chain_id, state_snapshot.clone());
 
             let mut entries = Vec::<String>::new();
             for (id, xt) in &mut state.pending {
@@ -111,8 +113,8 @@ impl DefaultCoordinator {
                         id: undecided_id.clone(),
                         is_locked: xt.locked_chains.contains(&req.chain_id),
                         vote_sent: xt.vote_sent,
-                        raw_tx_chain_ids: xt.raw_txs.keys().cloned().collect(),
-                        cs_chain_ids: xt.chain_states.keys().cloned().collect(),
+                        raw_tx_chain_ids: xt.raw_txs.keys().copied().collect(),
+                        cs_chain_ids: xt.chain_states.keys().copied().collect(),
                         has_local_chain_state: xt.chain_states.contains_key(&req.chain_id),
                     }
                 });
@@ -283,7 +285,10 @@ impl DefaultCoordinator {
         &self,
         deliverables: &mut [DeliverableXt],
     ) -> Result<(), CoordinatorError> {
-        let total_deps = deliverables.iter().map(|entry| entry.deps.len()).sum::<usize>();
+        let total_deps = deliverables
+            .iter()
+            .map(|entry| entry.deps.len())
+            .sum::<usize>();
         if total_deps == 0 {
             return Ok(());
         }
@@ -315,13 +320,12 @@ impl DefaultCoordinator {
 
         Ok(())
     }
-
 }
 
 #[cfg(test)]
 mod tests {
-    use compose_primitives::{BuilderPollRequest, ChainId};
     use alloy::primitives::B256;
+    use compose_primitives::{BuilderPollRequest, ChainId};
 
     use crate::coordinator::DefaultCoordinator;
     use crate::model::pending_xt::PendingXt;
@@ -340,16 +344,8 @@ mod tests {
 
     #[tokio::test]
     async fn builder_poll_returns_empty_when_no_pending() {
-        let coordinator = DefaultCoordinator::new(
-            ChainId(77777),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            1000,
-        );
+        let coordinator =
+            DefaultCoordinator::new(ChainId(77777), None, None, None, None, None, None, 1000);
 
         let resp = coordinator
             .handle_builder_poll(&make_poll_req(ChainId(77777), 1))
@@ -361,16 +357,8 @@ mod tests {
 
     #[tokio::test]
     async fn builder_poll_returns_hold_when_undecided_xt_exists() {
-        let coordinator = DefaultCoordinator::new(
-            ChainId(77777),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            10_000,
-        );
+        let coordinator =
+            DefaultCoordinator::new(ChainId(77777), None, None, None, None, None, None, 10_000);
 
         {
             let mut state = coordinator.state.write().await;
@@ -390,16 +378,8 @@ mod tests {
 
     #[tokio::test]
     async fn builder_poll_skips_aborted_xts() {
-        let coordinator = DefaultCoordinator::new(
-            ChainId(77777),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            1000,
-        );
+        let coordinator =
+            DefaultCoordinator::new(ChainId(77777), None, None, None, None, None, None, 1000);
 
         {
             let mut state = coordinator.state.write().await;
@@ -420,16 +400,8 @@ mod tests {
 
     #[tokio::test]
     async fn builder_poll_returns_committed_txs() {
-        let coordinator = DefaultCoordinator::new(
-            ChainId(77777),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            1000,
-        );
+        let coordinator =
+            DefaultCoordinator::new(ChainId(77777), None, None, None, None, None, None, 1000);
 
         {
             let mut state = coordinator.state.write().await;

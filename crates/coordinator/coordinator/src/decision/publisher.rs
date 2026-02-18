@@ -2,8 +2,8 @@
 
 use async_trait::async_trait;
 
-use compose_primitives_traits::CoordinatorError;
 use crate::traits::decision::DecisionHandler;
+use compose_primitives_traits::CoordinatorError;
 
 /// Decision handler that defers to the publisher's 2PC mechanism.
 ///

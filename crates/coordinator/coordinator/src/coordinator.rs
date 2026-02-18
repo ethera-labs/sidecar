@@ -14,7 +14,9 @@ use tokio_util::task::TaskTracker;
 use tracing::{error, info, warn};
 
 use compose_metrics::SidecarMetrics;
-use compose_primitives_traits::{CoordinatorError, MailboxSender, PublisherClient, PutInboxBuilder};
+use compose_primitives_traits::{
+    CoordinatorError, MailboxSender, PublisherClient, PutInboxBuilder,
+};
 
 use crate::model::chain_overlay::ChainOverlay;
 use crate::model::pending_xt::PendingXt;
@@ -347,16 +349,8 @@ mod tests {
 
     #[tokio::test]
     async fn has_active_instance_returns_false_when_decided() {
-        let coordinator = DefaultCoordinator::new(
-            ChainId(77777),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            1000,
-        );
+        let coordinator =
+            DefaultCoordinator::new(ChainId(77777), None, None, None, None, None, None, 1000);
 
         {
             let mut state = coordinator.state.write().await;
@@ -373,16 +367,8 @@ mod tests {
 
     #[tokio::test]
     async fn cleanup_removes_old_decided_xts() {
-        let coordinator = DefaultCoordinator::new(
-            ChainId(77777),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            1000,
-        );
+        let coordinator =
+            DefaultCoordinator::new(ChainId(77777), None, None, None, None, None, None, 1000);
 
         {
             let mut state = coordinator.state.write().await;

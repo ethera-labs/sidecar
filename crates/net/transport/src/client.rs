@@ -145,7 +145,10 @@ impl Transport for QuicClient {
     async fn recv(&self) -> Result<Bytes, TransportError> {
         let conn = {
             let guard = self.connection.lock().await;
-            guard.as_ref().ok_or(TransportError::ConnectionClosed)?.clone()
+            guard
+                .as_ref()
+                .ok_or(TransportError::ConnectionClosed)?
+                .clone()
         };
 
         let (_, mut recv_stream) = conn

@@ -133,7 +133,8 @@ impl DefaultCoordinator {
                     )
                     .await;
                 if let Some(m) = &self.metrics {
-                    m.simulation_duration_seconds.observe(sim_start.elapsed().as_secs_f64());
+                    m.simulation_duration_seconds
+                        .observe(sim_start.elapsed().as_secs_f64());
                 }
                 match sim_result {
                     Ok(result) => {
@@ -213,7 +214,8 @@ impl DefaultCoordinator {
         if let Some(ref result_overrides) = result.state_overrides {
             merge_overrides(&mut merged_overrides, result_overrides);
         }
-        xt.state_overrides.insert(self.chain_id, merged_overrides.clone());
+        xt.state_overrides
+            .insert(self.chain_id, merged_overrides.clone());
 
         for dep in &result.dependencies {
             if !xt
@@ -240,9 +242,10 @@ impl DefaultCoordinator {
                 .map(|cs| (cs.block_number, cs.flashblock_index))
                 .unwrap_or((0, 0));
 
-            let overlay = state.chain_overlay.entry(self.chain_id).or_insert_with(|| {
-                ChainOverlay::new(block_number, flashblock_index)
-            });
+            let overlay = state
+                .chain_overlay
+                .entry(self.chain_id)
+                .or_insert_with(|| ChainOverlay::new(block_number, flashblock_index));
             // Reset overlay when moving to a new block/flashblock window.
             if !overlay.matches(block_number, flashblock_index) {
                 *overlay = ChainOverlay::new(block_number, flashblock_index);
@@ -263,7 +266,9 @@ impl DefaultCoordinator {
     ) -> bool {
         let deadline = Instant::now() + Duration::from_millis(self.circ_timeout_ms);
         loop {
-            let fulfilled = self.fulfill_dependencies_from_mailbox(instance_id, deps).await;
+            let fulfilled = self
+                .fulfill_dependencies_from_mailbox(instance_id, deps)
+                .await;
             if fulfilled > 0 {
                 return true;
             }
@@ -330,7 +335,10 @@ impl DefaultCoordinator {
         }
 
         let Some(sender) = self.mailbox_sender.as_ref().cloned() else {
-            warn!(instance_id, "Mailbox sender not configured, skipping outbound mailbox delivery");
+            warn!(
+                instance_id,
+                "Mailbox sender not configured, skipping outbound mailbox delivery"
+            );
             return Ok(());
         };
 
@@ -471,16 +479,8 @@ mod tests {
 
     #[tokio::test]
     async fn send_vote_does_not_overwrite_existing_local_vote() {
-        let coordinator = DefaultCoordinator::new(
-            ChainId(77777),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            1000,
-        );
+        let coordinator =
+            DefaultCoordinator::new(ChainId(77777), None, None, None, None, None, None, 1000);
 
         {
             let mut state = coordinator.state.write().await;
@@ -500,16 +500,8 @@ mod tests {
 
     #[tokio::test]
     async fn send_vote_decides_when_peer_vote_already_present() {
-        let coordinator = DefaultCoordinator::new(
-            ChainId(77777),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            1000,
-        );
+        let coordinator =
+            DefaultCoordinator::new(ChainId(77777), None, None, None, None, None, None, 1000);
 
         {
             let mut state = coordinator.state.write().await;
@@ -530,16 +522,8 @@ mod tests {
 
     #[tokio::test]
     async fn send_vote_applies_existing_abort_peer_vote() {
-        let coordinator = DefaultCoordinator::new(
-            ChainId(77777),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            1000,
-        );
+        let coordinator =
+            DefaultCoordinator::new(ChainId(77777), None, None, None, None, None, None, 1000);
 
         {
             let mut state = coordinator.state.write().await;
@@ -559,10 +543,10 @@ mod tests {
     }
 
     use async_trait::async_trait;
+    use compose_primitives::StateOverride;
     use compose_primitives::{CrossRollupDependency, CrossRollupMessage, SimulationResult};
     use compose_simulation::error::SimulationError;
     use compose_simulation::traits::Simulator;
-    use compose_primitives::StateOverride;
     use std::sync::Arc;
 
     /// Simple stub simulator for testing: always returns success or always fails.
@@ -669,16 +653,8 @@ mod tests {
 
     #[tokio::test]
     async fn process_xt_votes_false_when_no_local_txs() {
-        let coordinator = DefaultCoordinator::new(
-            ChainId(77777),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            1000,
-        );
+        let coordinator =
+            DefaultCoordinator::new(ChainId(77777), None, None, None, None, None, None, 1000);
 
         {
             let mut state = coordinator.state.write().await;

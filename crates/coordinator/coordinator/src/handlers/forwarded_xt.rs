@@ -6,8 +6,8 @@ use compose_primitives::{ChainId, SequenceNumber};
 use tracing::info;
 
 use crate::coordinator::DefaultCoordinator;
-use compose_primitives_traits::CoordinatorError;
 use crate::model::pending_xt::PendingXt;
+use compose_primitives_traits::CoordinatorError;
 
 impl DefaultCoordinator {
     /// Process an XT forwarded from another sidecar.

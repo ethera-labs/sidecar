@@ -206,11 +206,7 @@ impl PeerArgs {
 #[derive(Debug, Clone, clap::Args)]
 pub struct LogArgs {
     /// Log level: debug, info, warn, error.
-    #[arg(
-        long = "log.level",
-        env = "SIDECAR_LOG_LEVEL",
-        default_value = "info"
-    )]
+    #[arg(long = "log.level", env = "SIDECAR_LOG_LEVEL", default_value = "info")]
     pub level: String,
 
     /// Log format: json or pretty.

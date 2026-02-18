@@ -51,9 +51,8 @@ impl SidecarMetrics {
             xt_decided_abort_total.clone(),
         );
 
-        let simulation_duration_seconds = Histogram::new(
-            [0.001, 0.005, 0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0].into_iter(),
-        );
+        let simulation_duration_seconds =
+            Histogram::new([0.001, 0.005, 0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0].into_iter());
         registry.register(
             "sidecar_simulation_duration_seconds",
             "Wall-clock time of each EVM simulation call",

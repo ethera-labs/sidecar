@@ -6,13 +6,13 @@ use crate::rollup_v2;
 
 impl From<&rollup_v2::XtId> for XtId {
     fn from(proto: &rollup_v2::XtId) -> Self {
-        XtId::from_bytes(&proto.hash)
+        Self::from_bytes(&proto.hash)
     }
 }
 
 impl From<&XtId> for rollup_v2::XtId {
     fn from(id: &XtId) -> Self {
-        rollup_v2::XtId {
+        Self {
             hash: id.as_bytes().to_vec(),
         }
     }

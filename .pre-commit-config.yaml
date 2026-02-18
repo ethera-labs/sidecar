@@ -4,8 +4,8 @@ repos:
       - id: fmt
         name: cargo fmt
         language: system
-        entry: cargo fmt --all --
-        args: [--check]
+        entry: cargo fmt --all
+        args: []
         types: [rust]
         pass_filenames: false
 
