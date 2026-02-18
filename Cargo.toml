@@ -99,9 +99,19 @@ rust_2018_idioms = { level = "deny", priority = -1 }
 
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }
+# Style
 dbg_macro = "warn"
 doc_markdown = "warn"
 derive_partial_eq_without_eq = "warn"
+uninlined_format_args = "warn"
+redundant_else = "warn"
+flat_map_option = "warn"
+manual_let_else = "warn"
+cloned_instead_of_copied = "warn"
+explicit_iter_loop = "warn"
+match_wildcard_for_single_variants = "warn"
+semicolon_if_nothing_returned = "warn"
+use_self = "warn"
 
 [profile.release]
 lto = "thin"
