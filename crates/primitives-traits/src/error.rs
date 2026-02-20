@@ -52,6 +52,9 @@ pub enum CoordinatorError {
     #[error("timeout waiting for CIRC from chain {0}")]
     CircTimeout(u64),
 
+    #[error("too many pending instances (limit: {0})")]
+    TooManyPendingInstances(usize),
+
     #[error("{0}")]
     Other(String),
 }

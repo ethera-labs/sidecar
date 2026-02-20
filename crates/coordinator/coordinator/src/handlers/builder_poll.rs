@@ -2,7 +2,7 @@
 
 use alloy_rpc_types_eth::state::StateOverride;
 use compose_primitives::{BuilderPollRequest, BuilderPollResponse, ChainId, ChainState};
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 use crate::coordinator::DefaultCoordinator;
 use crate::model::ordering::xt_less;
@@ -28,11 +28,20 @@ impl DefaultCoordinator {
         self.nonce_manager.reset_for_block(req.block_number).await;
 
         // Parse the builder-provided JSON state overrides into the typed form at
-        // the HTTP boundary. Parsing failures are treated as empty overrides.
-        let typed_overrides: Option<StateOverride> = req
-            .state_overrides
-            .as_ref()
-            .and_then(|v| serde_json::from_value::<StateOverride>(v.clone()).ok());
+        // the HTTP boundary. Parsing failures are logged and treated as empty overrides.
+        let typed_overrides: Option<StateOverride> = req.state_overrides.as_ref().and_then(|v| {
+            match serde_json::from_value::<StateOverride>(v.clone()) {
+                Ok(o) => Some(o),
+                Err(e) => {
+                    warn!(
+                        chain_id = %req.chain_id,
+                        error = %e,
+                        "Failed to parse builder state overrides; proceeding without them"
+                    );
+                    None
+                }
+            }
+        });
 
         let state_snapshot = ChainState {
             chain_id: req.chain_id,
@@ -46,12 +55,14 @@ impl DefaultCoordinator {
 
         // Gather everything needed under the write lock, then release before
         // making any async calls to avoid holding the lock across await points.
+        // Chain state is tracked globally in `state.chain_states` rather than
+        // per-XT, so no per-XT chain_states field is needed.
         struct UndecidedInfo {
             id: String,
             is_locked: bool,
             vote_sent: bool,
             raw_tx_chain_ids: Vec<ChainId>,
-            cs_chain_ids: Vec<ChainId>,
+            known_chain_ids: Vec<ChainId>,
             has_local_chain_state: bool,
         }
 
@@ -62,13 +73,9 @@ impl DefaultCoordinator {
                 .insert(req.chain_id, state_snapshot.clone());
 
             let mut entries = Vec::<String>::new();
-            for (id, xt) in &mut state.pending {
+            for (id, xt) in &state.pending {
                 if !xt.raw_txs.contains_key(&req.chain_id) {
                     continue;
-                }
-                // Update chain state snapshot if not yet locked for simulation.
-                if xt.decision.is_none() && !xt.locked_chains.contains(&req.chain_id) {
-                    xt.chain_states.insert(req.chain_id, state_snapshot.clone());
                 }
                 entries.push(id.clone());
             }
@@ -104,6 +111,10 @@ impl DefaultCoordinator {
 
             // Snapshot data needed to determine readiness — avoids holding the
             // write lock across the async is_publisher_connected call below.
+            // Chain readiness is now checked against the global chain_states map
+            // (one entry per chain that has ever polled), not per-XT copies.
+            let known_chain_ids: Vec<ChainId> = state.chain_states.keys().copied().collect();
+            let has_local_chain_state = state.chain_states.contains_key(&req.chain_id);
             let undecided_info = entries
                 .iter()
                 .find(|id| state.pending[*id].decision.is_none())
@@ -114,8 +125,8 @@ impl DefaultCoordinator {
                         is_locked: xt.locked_chains.contains(&req.chain_id),
                         vote_sent: xt.vote_sent,
                         raw_tx_chain_ids: xt.raw_txs.keys().copied().collect(),
-                        cs_chain_ids: xt.chain_states.keys().copied().collect(),
-                        has_local_chain_state: xt.chain_states.contains_key(&req.chain_id),
+                        known_chain_ids: known_chain_ids.clone(),
+                        has_local_chain_state,
                     }
                 });
 
@@ -128,7 +139,7 @@ impl DefaultCoordinator {
             let ready = if is_connected {
                 info.raw_tx_chain_ids
                     .iter()
-                    .all(|c| info.cs_chain_ids.contains(c))
+                    .all(|c| info.known_chain_ids.contains(c))
             } else {
                 info.has_local_chain_state
             };
@@ -136,23 +147,23 @@ impl DefaultCoordinator {
             if ready && !info.vote_sent && !info.is_locked {
                 // Re-acquire write lock to guard the locked_chains insert against
                 // concurrent polls, then spawn simulation outside the lock.
-                let xt_opt = {
+                let should_spawn = {
                     let mut state = self.state.write().await;
-                    state.pending.get_mut(&info.id).and_then(|xt| {
+                    state.pending.get_mut(&info.id).is_some_and(|xt| {
                         if xt.vote_sent || xt.locked_chains.contains(&req.chain_id) {
-                            None
+                            false
                         } else {
                             xt.locked_chains.insert(req.chain_id);
-                            Some(xt.clone())
+                            true
                         }
                     })
                 };
 
-                if let Some(xt_clone) = xt_opt {
+                if should_spawn {
                     let coordinator = self.clone();
                     let id = info.id;
                     self.task_tracker.spawn(async move {
-                        coordinator.process_xt(&id, &xt_clone).await;
+                        coordinator.process_xt(&id).await;
                     });
                     if let Some(m) = &self.metrics {
                         m.builder_poll_hold_total.inc();
@@ -173,10 +184,9 @@ impl DefaultCoordinator {
         {
             let mut state = self.state.write().await;
             for id in &entries {
-                let xt = state
-                    .pending
-                    .get_mut(id)
-                    .expect("entry id collected from pending state");
+                let Some(xt) = state.pending.get_mut(id) else {
+                    continue;
+                };
 
                 if xt.delivered_chains.contains(&req.chain_id) {
                     continue;

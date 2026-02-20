@@ -4,8 +4,7 @@ use std::collections::{HashMap, HashSet};
 use std::time::Instant;
 
 use compose_primitives::{
-    ChainId, ChainState, CrossRollupDependency, CrossRollupMessage, PeriodId, SequenceNumber,
-    StateOverride,
+    ChainId, CrossRollupDependency, CrossRollupMessage, PeriodId, SequenceNumber, StateOverride,
 };
 use compose_proto::rollup_v2::MailboxMessage;
 
@@ -24,8 +23,6 @@ pub struct PendingXt {
 
     /// Raw RLP-encoded transactions per chain.
     pub raw_txs: HashMap<ChainId, Vec<Vec<u8>>>,
-    /// Chain state snapshots from builder polls.
-    pub chain_states: HashMap<ChainId, ChainState>,
     /// State overrides accumulated during simulation, keyed by chain.
     pub state_overrides: HashMap<ChainId, StateOverride>,
 
@@ -57,10 +54,16 @@ pub struct PendingXt {
     pub pending_mailbox: Vec<MailboxMessage>,
     /// Already-sent outbound CIRC messages.
     pub sent_mailbox: Vec<MailboxMessage>,
+    /// Dedup key set for `sent_mailbox` — O(1) membership check.
+    pub sent_mailbox_keys: HashSet<String>,
     /// Cross-rollup dependencies discovered during simulation.
     pub dependencies: Vec<CrossRollupDependency>,
+    /// O(1) dedup set for `dependencies`, keyed by `dep_key()`.
+    pub dep_keys: HashSet<String>,
     /// Dependencies that have been fulfilled.
     pub fulfilled_deps: Vec<CrossRollupDependency>,
+    /// O(1) dedup set for `fulfilled_deps`, keyed by `dep_key()`.
+    pub fulfilled_dep_keys: HashSet<String>,
     /// Outbound messages from simulation.
     pub outbound_messages: Vec<CrossRollupMessage>,
 
@@ -76,7 +79,6 @@ impl PendingXt {
             period_id: PeriodId(0),
             sequence_num: SequenceNumber(0),
             raw_txs: HashMap::new(),
-            chain_states: HashMap::new(),
             state_overrides: HashMap::new(),
             created_at: Instant::now(),
             simulated_at: None,
@@ -90,8 +92,11 @@ impl PendingXt {
             origin_seq: SequenceNumber(0),
             pending_mailbox: Vec::new(),
             sent_mailbox: Vec::new(),
+            sent_mailbox_keys: HashSet::new(),
             dependencies: Vec::new(),
+            dep_keys: HashSet::new(),
             fulfilled_deps: Vec::new(),
+            fulfilled_dep_keys: HashSet::new(),
             outbound_messages: Vec::new(),
             delivered_chains: HashSet::new(),
         }

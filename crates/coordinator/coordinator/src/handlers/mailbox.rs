@@ -31,19 +31,26 @@ impl DefaultCoordinator {
             m.circ_messages_received_total.inc();
         }
 
-        let mut state = self.state.write().await;
-        let matched = state.pending.iter_mut().find_map(|(instance_key, xt)| {
-            if xt.instance_id == msg.instance_id {
-                xt.pending_mailbox.push(msg.clone());
-                Some((instance_key.clone(), xt.pending_mailbox.len()))
-            } else {
-                None
-            }
-        });
+        let notify = {
+            let mut state = self.state.write().await;
+            let matched = state.pending.iter_mut().find_map(|(instance_key, xt)| {
+                if xt.instance_id == msg.instance_id {
+                    xt.pending_mailbox.push(msg.clone());
+                    Some((instance_key.clone(), xt.pending_mailbox.len()))
+                } else {
+                    None
+                }
+            });
 
-        if let Some((instance_key, pending_count)) = matched {
-            debug!(instance_id = %instance_key, pending_count, "Added mailbox message to pending XT");
-        }
+            if let Some((instance_key, pending_count)) = matched {
+                debug!(instance_id = %instance_key, pending_count, "Added mailbox message to pending XT");
+            }
+
+            state.mailbox_notify.clone()
+        };
+
+        // Wake all simulations waiting on CIRC dependencies.
+        notify.notify_waiters();
 
         Ok(())
     }

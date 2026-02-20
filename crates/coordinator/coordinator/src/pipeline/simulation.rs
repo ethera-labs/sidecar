@@ -6,24 +6,23 @@ use compose_mailbox::matching::{contains_message, dep_key, matches_dependency};
 use compose_mailbox::overrides::merge_overrides;
 use compose_primitives::{ChainId, CrossRollupDependency, CrossRollupMessage, StateOverride};
 use compose_proto::rollup_v2::MailboxMessage;
-use tokio::time::{sleep, Instant};
+use tokio::time::{sleep_until, Instant};
 use tracing::{debug, error, info, warn};
 
 use crate::coordinator::DefaultCoordinator;
 use crate::model::chain_overlay::ChainOverlay;
-use crate::model::pending_xt::PendingXt;
 
-const MAILBOX_POLL_INTERVAL_MS: u64 = 50;
-
-fn same_mailbox_message(a: &MailboxMessage, b: &MailboxMessage) -> bool {
-    a.instance_id == b.instance_id
-        && a.source_chain == b.source_chain
-        && a.destination_chain == b.destination_chain
-        && a.source == b.source
-        && a.receiver == b.receiver
-        && a.label == b.label
-        && a.data == b.data
-        && a.session_id == b.session_id
+/// Canonical dedup key for a sent mailbox message.
+fn mailbox_message_key(msg: &MailboxMessage) -> String {
+    format!(
+        "{}:{}:{}:{}:{}:{}",
+        hex::encode(&msg.instance_id),
+        msg.source_chain,
+        msg.destination_chain,
+        hex::encode(&msg.source),
+        hex::encode(&msg.receiver),
+        msg.label,
+    )
 }
 
 impl DefaultCoordinator {
@@ -31,18 +30,21 @@ impl DefaultCoordinator {
     ///
     /// Simulates transactions sequentially, discovers mailbox dependencies,
     /// waits for CIRC messages, and sends a vote.
-    pub(crate) async fn process_xt(&self, instance_id: &str, _xt: &PendingXt) {
+    pub(crate) async fn process_xt(&self, instance_id: &str) {
         info!(instance_id, chain_id = %self.chain_id, "Processing XT");
 
-        let (tx_bytes_list, mut current_overrides) = {
+        // Capture everything we need from state in a single read lock. Chain
+        // state is read from the global `state.chain_states` (updated on every
+        // builder poll) rather than per-XT copies, which eliminates the
+        // per-XT `chain_states` HashMap allocation.
+        let (tx_bytes_list, mut current_overrides, sim_block_number, sim_flashblock_index) = {
             let state = self.state.read().await;
             match state.pending.get(instance_id) {
                 Some(xt) => match xt.raw_txs.get(&self.chain_id) {
                     Some(txs) if !txs.is_empty() => {
-                        let has_chain_state = xt.chain_states.contains_key(&self.chain_id);
-                        let has_overrides = xt
-                            .chain_states
-                            .get(&self.chain_id)
+                        let chain_state = state.chain_states.get(&self.chain_id);
+                        let has_chain_state = chain_state.is_some();
+                        let has_overrides = chain_state
                             .and_then(|cs| cs.state_overrides.as_ref())
                             .is_some();
                         debug!(
@@ -50,36 +52,28 @@ impl DefaultCoordinator {
                             chain_id = %self.chain_id,
                             has_chain_state,
                             has_overrides,
-                            num_chain_states = xt.chain_states.len(),
                             "Simulation state check"
                         );
+
+                        let block_number = chain_state.map(|cs| cs.block_number).unwrap_or(0);
+                        let flashblock_index =
+                            chain_state.map(|cs| cs.flashblock_index).unwrap_or(0);
+
                         // Start from the builder-provided overrides for this chain,
                         // then layer in any accumulated overlay from prior committed XTs
                         // in the same block/flashblock window.
-                        let mut overrides = xt
-                            .chain_states
-                            .get(&self.chain_id)
+                        let mut overrides = chain_state
                             .and_then(|cs| cs.state_overrides.clone())
                             .unwrap_or_default();
 
                         // Apply chain overlay from prior committed XTs.
                         if let Some(chain_overlay) = state.chain_overlay.get(&self.chain_id) {
-                            let block_number = xt
-                                .chain_states
-                                .get(&self.chain_id)
-                                .map(|cs| cs.block_number)
-                                .unwrap_or(0);
-                            let flashblock_index = xt
-                                .chain_states
-                                .get(&self.chain_id)
-                                .map(|cs| cs.flashblock_index)
-                                .unwrap_or(0);
                             if chain_overlay.matches(block_number, flashblock_index) {
                                 merge_overrides(&mut overrides, &chain_overlay.overlay);
                             }
                         }
 
-                        (txs.clone(), overrides)
+                        (txs.clone(), overrides, block_number, flashblock_index)
                     }
                     _ => {
                         warn!(instance_id, "No local transactions, rejecting");
@@ -139,7 +133,13 @@ impl DefaultCoordinator {
                 match sim_result {
                     Ok(result) => {
                         current_overrides = self
-                            .record_simulation_state(instance_id, &result, &current_overrides)
+                            .record_simulation_state(
+                                instance_id,
+                                &result,
+                                &current_overrides,
+                                sim_block_number,
+                                sim_flashblock_index,
+                            )
                             .await;
 
                         if !result.success && result.dependencies.is_empty() {
@@ -199,11 +199,17 @@ impl DefaultCoordinator {
     /// Record simulation results into XT state, update the chain overlay with
     /// the post-simulation overrides so subsequent XTs see the committed state,
     /// and return the merged overrides for the next simulation step.
+    ///
+    /// `block_number` and `flashblock_index` are the values captured at the
+    /// start of `process_xt` so the overlay is tagged to the correct window
+    /// regardless of any builder polls that arrive during simulation.
     async fn record_simulation_state(
         &self,
         instance_id: &str,
         result: &compose_primitives::SimulationResult,
         base_overrides: &StateOverride,
+        block_number: u64,
+        flashblock_index: u64,
     ) -> StateOverride {
         let mut state = self.state.write().await;
         let Some(xt) = state.pending.get_mut(instance_id) else {
@@ -218,11 +224,8 @@ impl DefaultCoordinator {
             .insert(self.chain_id, merged_overrides.clone());
 
         for dep in &result.dependencies {
-            if !xt
-                .dependencies
-                .iter()
-                .any(|existing| dep_key(existing) == dep_key(dep))
-            {
+            let key = dep_key(dep);
+            if xt.dep_keys.insert(key) {
                 xt.dependencies.push(dep.clone());
             }
         }
@@ -236,18 +239,15 @@ impl DefaultCoordinator {
         // Update the chain overlay for this block/flashblock window so that the
         // next XT simulated on this chain sees the accumulated post-simulation state.
         if result.success {
-            let (block_number, flashblock_index) = xt
-                .chain_states
-                .get(&self.chain_id)
-                .map(|cs| (cs.block_number, cs.flashblock_index))
-                .unwrap_or((0, 0));
-
             let overlay = state
                 .chain_overlay
                 .entry(self.chain_id)
                 .or_insert_with(|| ChainOverlay::new(block_number, flashblock_index));
-            // Reset overlay when moving to a new block/flashblock window.
-            if !overlay.matches(block_number, flashblock_index) {
+            // Reset overlay when moving to a new block/flashblock window, or
+            // when a reorg causes the block number to regress.
+            if !overlay.matches(block_number, flashblock_index)
+                || block_number < overlay.block_number
+            {
                 *overlay = ChainOverlay::new(block_number, flashblock_index);
             }
             merge_overrides(&mut overlay.overlay, &merged_overrides);
@@ -256,9 +256,9 @@ impl DefaultCoordinator {
         merged_overrides
     }
 
-    /// Poll the pending mailbox until at least one dependency is fulfilled, or
-    /// the CIRC timeout expires. The timeout is the authoritative bound;
-    /// callers should not impose additional retry limits on top of this.
+    /// Wait until at least one dependency is fulfilled or the CIRC timeout
+    /// expires. Uses `Notify` to wake immediately when a mailbox message
+    /// arrives, replacing the previous 50 ms busy-poll loop.
     async fn wait_for_dependencies(
         &self,
         instance_id: &str,
@@ -275,7 +275,17 @@ impl DefaultCoordinator {
             if Instant::now() >= deadline {
                 return false;
             }
-            sleep(Duration::from_millis(MAILBOX_POLL_INTERVAL_MS)).await;
+            // Clone the Arc before dropping the lock so we can call .notified()
+            // outside the critical section. This avoids missing a notification
+            // that arrives between the dependency check above and the select below.
+            let notify = {
+                let state = self.state.read().await;
+                state.mailbox_notify.clone()
+            };
+            tokio::select! {
+                _ = notify.notified() => {}
+                _ = sleep_until(deadline) => { return false; }
+            }
         }
     }
 
@@ -292,11 +302,8 @@ impl DefaultCoordinator {
         };
 
         for dep in deps {
-            if xt
-                .fulfilled_deps
-                .iter()
-                .any(|existing| dep_key(existing) == dep_key(dep))
-            {
+            let key = dep_key(dep);
+            if xt.fulfilled_dep_keys.contains(&key) {
                 continue;
             }
 
@@ -308,6 +315,7 @@ impl DefaultCoordinator {
                 let mailbox_msg = xt.pending_mailbox.remove(idx);
                 let mut fulfilled = dep.clone();
                 fulfilled.data = mailbox_msg.data.first().cloned();
+                xt.fulfilled_dep_keys.insert(key);
                 xt.fulfilled_deps.push(fulfilled);
                 added += 1;
             }
@@ -366,11 +374,8 @@ impl DefaultCoordinator {
                     session_id,
                 };
 
-                if !xt
-                    .sent_mailbox
-                    .iter()
-                    .any(|sent| same_mailbox_message(sent, &mailbox_msg))
-                {
+                let key = mailbox_message_key(&mailbox_msg);
+                if xt.sent_mailbox_keys.insert(key) {
                     xt.sent_mailbox.push(mailbox_msg.clone());
                     to_send.push(mailbox_msg);
                 }
@@ -383,9 +388,7 @@ impl DefaultCoordinator {
         }
         if sent_count > 0 {
             if let Some(m) = &self.metrics {
-                for _ in 0..sent_count {
-                    m.circ_messages_sent_total.inc();
-                }
+                m.circ_messages_sent_total.inc_by(sent_count as u64);
             }
         }
 
@@ -608,11 +611,7 @@ mod tests {
             state.pending.insert("xt-77777-10".to_string(), xt);
         }
 
-        let xt_snapshot = {
-            let state = coordinator.state.read().await;
-            state.pending["xt-77777-10"].clone()
-        };
-        coordinator.process_xt("xt-77777-10", &xt_snapshot).await;
+        coordinator.process_xt("xt-77777-10").await;
 
         let state = coordinator.state.read().await;
         let xt = state.pending.get("xt-77777-10").unwrap();
@@ -640,11 +639,7 @@ mod tests {
             state.pending.insert("xt-77777-11".to_string(), xt);
         }
 
-        let xt_snapshot = {
-            let state = coordinator.state.read().await;
-            state.pending["xt-77777-11"].clone()
-        };
-        coordinator.process_xt("xt-77777-11", &xt_snapshot).await;
+        coordinator.process_xt("xt-77777-11").await;
 
         let state = coordinator.state.read().await;
         let xt = state.pending.get("xt-77777-11").unwrap();
@@ -664,11 +659,7 @@ mod tests {
             state.pending.insert("xt-77777-12".to_string(), xt);
         }
 
-        let xt_snapshot = {
-            let state = coordinator.state.read().await;
-            state.pending["xt-77777-12"].clone()
-        };
-        coordinator.process_xt("xt-77777-12", &xt_snapshot).await;
+        coordinator.process_xt("xt-77777-12").await;
 
         let state = coordinator.state.read().await;
         let xt = state.pending.get("xt-77777-12").unwrap();

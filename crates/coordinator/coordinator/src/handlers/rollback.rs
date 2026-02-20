@@ -31,6 +31,7 @@ impl DefaultCoordinator {
         state.period_initialized = false;
         state.last_sequence_num = Default::default();
         state.last_known_blocks.clear();
+        state.chain_overlay.clear();
 
         warn!(
             period_id = period_id.0,

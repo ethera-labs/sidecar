@@ -11,6 +11,9 @@ use crate::coordinator::DefaultCoordinator;
 use crate::model::pending_xt::PendingXt;
 use compose_primitives_traits::CoordinatorError;
 
+/// Maximum number of pending XTs before new submissions are rejected.
+const MAX_PENDING_XTS: usize = 100;
+
 impl DefaultCoordinator {
     /// Process a new instance from the publisher. Validates the period and
     /// sequence, decodes transactions, and registers the XT.
@@ -44,6 +47,13 @@ impl DefaultCoordinator {
 
         if state.pending.contains_key(&instance_id) {
             return Err(CoordinatorError::InstanceAlreadyPending(instance_id));
+        }
+
+        if state.pending.len() >= MAX_PENDING_XTS {
+            if let Some(m) = &self.metrics {
+                m.xt_received_total.inc();
+            }
+            return Err(CoordinatorError::TooManyPendingInstances(MAX_PENDING_XTS));
         }
 
         if !state.period_initialized {

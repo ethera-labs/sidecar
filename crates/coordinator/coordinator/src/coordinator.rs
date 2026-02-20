@@ -9,7 +9,7 @@ use compose_peer::traits::PeerCoordinator;
 use compose_primitives::{ChainId, ChainState, PeriodId, SequenceNumber, SuperblockNumber};
 use compose_simulation::traits::Simulator;
 use prost::Message;
-use tokio::sync::RwLock;
+use tokio::sync::{Notify, RwLock};
 use tokio_util::task::TaskTracker;
 use tracing::{error, info, warn};
 
@@ -39,6 +39,10 @@ pub(crate) struct CoordinatorState {
     /// Per-chain overlay of post-simulation state diffs for the current
     /// block/flashblock window. Lets XT-B see the state produced by XT-A.
     pub chain_overlay: HashMap<ChainId, ChainOverlay>,
+    /// Notified whenever a mailbox message arrives, waking waiting simulations.
+    pub mailbox_notify: Arc<Notify>,
+    /// Maps XT fingerprints to instance IDs for standalone-mode deduplication.
+    pub submitted_fingerprints: HashMap<String, String>,
 }
 
 impl CoordinatorState {
@@ -53,6 +57,8 @@ impl CoordinatorState {
             last_known_blocks: HashMap::new(),
             origin_seq: SequenceNumber(0),
             chain_overlay: HashMap::new(),
+            mailbox_notify: Arc::new(Notify::new()),
+            submitted_fingerprints: HashMap::new(),
         }
     }
 
@@ -302,19 +308,48 @@ impl DefaultCoordinator {
         &self,
         txs: HashMap<ChainId, Vec<Vec<u8>>>,
     ) -> Result<String, CoordinatorError> {
-        let instance_id = {
+        const MAX_PENDING_XTS: usize = 100;
+
+        // Compute fingerprint before acquiring the lock to detect duplicates.
+        let xt_request = build_xt_request(&txs);
+        let fingerprint = xt_request_fingerprint(&xt_request);
+
+        let (instance_id, txs_for_forward) = {
             let mut state = self.state.write().await;
+
+            // Return the existing instance ID for duplicate submissions, as long
+            // as the original XT is still pending. Once cleaned up, re-submission
+            // is allowed (the fingerprint entry is pruned by cleanup).
+            if let Some(existing_id) = state.submitted_fingerprints.get(&fingerprint) {
+                if state.pending.contains_key(existing_id) {
+                    let id = existing_id.clone();
+                    info!(instance_id = %id, "Duplicate XT submission, returning existing ID");
+                    return Ok(id);
+                }
+                // Original was cleaned up; remove the stale fingerprint entry.
+                state.submitted_fingerprints.remove(&fingerprint);
+            }
+
+            if state.pending.len() >= MAX_PENDING_XTS {
+                return Err(CoordinatorError::TooManyPendingInstances(MAX_PENDING_XTS));
+            }
+
             state.origin_seq = SequenceNumber(state.origin_seq.0 + 1);
             let seq = state.origin_seq;
             let id = format!("xt-{}-{}", self.chain_id, seq.0);
 
+            // Clone only for forwarding when a peer coordinator is configured;
+            // `txs` itself is moved into the XT to avoid an unconditional clone.
+            let txs_for_forward = self.peer_coordinator.as_ref().map(|_| txs.clone());
+
             let mut xt = PendingXt::new(id.clone(), id.as_bytes().to_vec());
             xt.origin_chain = Some(self.chain_id);
             xt.origin_seq = seq;
-            xt.raw_txs = txs.clone();
+            xt.raw_txs = txs;
 
             state.pending.insert(id.clone(), xt);
-            id
+            state.submitted_fingerprints.insert(fingerprint, id.clone());
+            (id, txs_for_forward)
         };
 
         info!(instance_id = %instance_id, "Submitted XT locally (standalone mode)");
@@ -327,6 +362,8 @@ impl DefaultCoordinator {
                 state.origin_seq
             };
             let pc = peer_coordinator.clone();
+            // txs_for_forward is Some(_) whenever peer_coordinator is Some.
+            let txs = txs_for_forward.expect("cloned above when peer_coordinator is set");
             self.task_tracker.spawn(async move {
                 if let Err(e) = pc.forward_xt(&id, &txs, chain_id, origin_seq).await {
                     error!(instance_id = %id, error = %e, "Failed to forward XT to peers");
