@@ -33,19 +33,16 @@ impl DefaultCoordinator {
 
         let notify = {
             let mut state = self.state.write().await;
-            let matched = state.pending.iter_mut().find_map(|(instance_key, xt)| {
-                if xt.instance_id == msg.instance_id {
+            if let Some(xt_id) = state.mailbox_index.get(&msg.instance_id).cloned() {
+                if let Some(xt) = state.pending.get_mut(&xt_id) {
                     xt.pending_mailbox.push(msg.clone());
-                    Some((instance_key.clone(), xt.pending_mailbox.len()))
-                } else {
-                    None
+                    debug!(
+                        instance_id = %xt_id,
+                        pending_count = xt.pending_mailbox.len(),
+                        "Added mailbox message to pending XT"
+                    );
                 }
-            });
-
-            if let Some((instance_key, pending_count)) = matched {
-                debug!(instance_id = %instance_key, pending_count, "Added mailbox message to pending XT");
             }
-
             state.mailbox_notify.clone()
         };
 
@@ -74,6 +71,9 @@ mod tests {
 
         {
             let mut state = coordinator.state.write().await;
+            state
+                .mailbox_index
+                .insert(instance_id.as_bytes().to_vec(), instance_id.clone());
             state.pending.insert(instance_id.clone(), xt);
         }
 

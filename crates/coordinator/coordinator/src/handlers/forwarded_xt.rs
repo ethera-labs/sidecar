@@ -44,6 +44,9 @@ impl DefaultCoordinator {
         xt.origin_chain = Some(origin_chain);
         xt.origin_seq = origin_seq;
 
+        state
+            .mailbox_index
+            .insert(instance_id.as_bytes().to_vec(), instance_id.to_string());
         state.pending.insert(instance_id.to_string(), xt);
 
         info!(

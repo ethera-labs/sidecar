@@ -43,6 +43,8 @@ pub(crate) struct CoordinatorState {
     pub mailbox_notify: Arc<Notify>,
     /// Maps XT fingerprints to instance IDs for standalone-mode deduplication.
     pub submitted_fingerprints: HashMap<String, String>,
+    /// Index from raw `instance_id` bytes → string XT id for mailbox routing (O(1)).
+    pub mailbox_index: HashMap<Vec<u8>, String>,
 }
 
 impl CoordinatorState {
@@ -59,6 +61,7 @@ impl CoordinatorState {
             chain_overlay: HashMap::new(),
             mailbox_notify: Arc::new(Notify::new()),
             submitted_fingerprints: HashMap::new(),
+            mailbox_index: HashMap::new(),
         }
     }
 
@@ -167,6 +170,11 @@ impl DefaultCoordinator {
                 true
             }
         });
+        state.mailbox_index = state
+            .pending
+            .values()
+            .map(|xt| (xt.instance_id.clone(), xt.id.clone()))
+            .collect();
     }
 
     async fn cleanup_loop(&self) {
@@ -345,6 +353,9 @@ impl DefaultCoordinator {
             xt.origin_seq = seq;
             xt.raw_txs = txs;
 
+            state
+                .mailbox_index
+                .insert(id.as_bytes().to_vec(), id.clone());
             state.pending.insert(id.clone(), xt);
             state.submitted_fingerprints.insert(fingerprint, id.clone());
             (id, txs_for_forward)

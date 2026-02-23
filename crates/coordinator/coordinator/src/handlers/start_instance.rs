@@ -94,6 +94,9 @@ impl DefaultCoordinator {
         xt.sequence_num = msg_seq;
         xt.raw_txs = raw_txs;
 
+        state
+            .mailbox_index
+            .insert(msg.instance_id.clone(), instance_id.clone());
         state.pending.insert(instance_id.clone(), xt);
 
         info!(
