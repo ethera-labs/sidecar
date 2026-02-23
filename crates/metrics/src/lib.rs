@@ -25,6 +25,8 @@ pub struct SidecarMetrics {
     pub circ_messages_received_total: Counter<u64>,
     /// Outbound CIRC mailbox messages sent.
     pub circ_messages_sent_total: Counter<u64>,
+    /// Vote send failures (publisher unreachable or peer send error).
+    pub vote_send_failed_total: Counter<u64>,
 }
 
 impl SidecarMetrics {
@@ -94,6 +96,13 @@ impl SidecarMetrics {
             circ_messages_sent_total.clone(),
         );
 
+        let vote_send_failed_total = Counter::default();
+        registry.register(
+            "sidecar_vote_send_failed",
+            "Vote send failures (publisher unreachable or peer send error)",
+            vote_send_failed_total.clone(),
+        );
+
         Self {
             xt_received_total,
             xt_decided_commit_total,
@@ -104,6 +113,7 @@ impl SidecarMetrics {
             builder_poll_empty_total,
             circ_messages_received_total,
             circ_messages_sent_total,
+            vote_send_failed_total,
         }
     }
 }

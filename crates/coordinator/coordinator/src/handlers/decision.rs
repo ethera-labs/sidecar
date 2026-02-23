@@ -1,7 +1,5 @@
 //! Decision message handling and XT finalization updates.
 
-use std::time::Instant;
-
 use tracing::info;
 
 use crate::coordinator::DefaultCoordinator;
@@ -21,8 +19,7 @@ impl DefaultCoordinator {
             .get_mut(instance_id)
             .ok_or_else(|| CoordinatorError::InstanceNotFound(instance_id.to_string()))?;
 
-        xt.decision = Some(decision);
-        xt.decided_at = Some(Instant::now());
+        xt.record_decision(decision);
 
         info!(instance_id, decision, "Decision received");
 

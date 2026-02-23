@@ -445,8 +445,12 @@ impl DefaultCoordinator {
             if let Some(publisher) = &self.publisher {
                 if let Err(e) = publisher.send_vote(&instance_bytes, vote).await {
                     error!(instance_id, error = %e, "Failed to send vote to publisher");
+                    if let Some(m) = &self.metrics {
+                        m.vote_send_failed_total.inc();
+                    }
+                } else {
+                    info!(instance_id, vote, "Vote sent to publisher");
                 }
-                info!(instance_id, vote, "Vote sent to publisher");
             }
         } else {
             info!(
@@ -461,9 +465,13 @@ impl DefaultCoordinator {
                 let chain_id = self.chain_id;
                 let id = instance_id.to_string();
                 let pc = peer_coord.clone();
+                let metrics = self.metrics.clone();
                 self.task_tracker.spawn(async move {
                     if let Err(e) = pc.send_vote_to_peers(&id, chain_id, vote).await {
                         error!(instance_id = %id, error = %e, "Failed to send vote to peers");
+                        if let Some(m) = metrics {
+                            m.vote_send_failed_total.inc();
+                        }
                     }
                 });
             }

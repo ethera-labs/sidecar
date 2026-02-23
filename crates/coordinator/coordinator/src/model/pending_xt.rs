@@ -111,4 +111,15 @@ impl PendingXt {
     pub fn is_committed(&self) -> bool {
         self.decision == Some(true)
     }
+
+    /// Record a commit/abort decision and free simulation memory that is no
+    /// longer needed post-decision.
+    pub fn record_decision(&mut self, decision: bool) {
+        self.decision = Some(decision);
+        self.decided_at = Some(Instant::now());
+        // state_overrides is only used during simulation; free it immediately
+        // after the decision so we don't hold large overlay maps until the
+        // cleanup loop runs.
+        self.state_overrides.clear();
+    }
 }

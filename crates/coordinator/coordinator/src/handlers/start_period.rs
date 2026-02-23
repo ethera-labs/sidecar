@@ -1,7 +1,5 @@
 //! Start-period handling and period state transitions.
 
-use std::time::Instant;
-
 use compose_primitives::{PeriodId, SuperblockNumber};
 use tracing::info;
 
@@ -23,8 +21,7 @@ impl DefaultCoordinator {
             if xt.decision.is_some() || xt.period_id.0 == 0 || xt.period_id >= period_id {
                 continue;
             }
-            xt.decision = Some(false);
-            xt.decided_at = Some(Instant::now());
+            xt.record_decision(false);
             aborted += 1;
         }
 

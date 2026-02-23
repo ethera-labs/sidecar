@@ -241,14 +241,12 @@ impl DefaultCoordinator {
         }
 
         if has_abort_vote {
-            xt.decision = Some(false);
-            xt.decided_at = Some(std::time::Instant::now());
+            xt.record_decision(false);
             return Some((false, collected, expected));
         }
 
         if expected > 0 && collected >= expected {
-            xt.decision = Some(true);
-            xt.decided_at = Some(std::time::Instant::now());
+            xt.record_decision(true);
             return Some((true, collected, expected));
         }
 

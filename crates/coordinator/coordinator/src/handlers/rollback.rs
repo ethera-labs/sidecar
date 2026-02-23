@@ -1,7 +1,5 @@
 //! Rollback handling for aborting undecided instances.
 
-use std::time::Instant;
-
 use compose_primitives::PeriodId;
 use tracing::warn;
 
@@ -23,8 +21,7 @@ impl DefaultCoordinator {
             if xt.decision.is_some() {
                 continue;
             }
-            xt.decision = Some(false);
-            xt.decided_at = Some(Instant::now());
+            xt.record_decision(false);
             aborted += 1;
         }
 
