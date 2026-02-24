@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 use compose_primitives::{ChainId, SequenceNumber};
-use tracing::info;
+use tracing::{debug, info};
 
 use crate::coordinator::DefaultCoordinator;
 use crate::model::pending_xt::PendingXt;
@@ -51,10 +51,22 @@ impl DefaultCoordinator {
             xt.locked_chains.insert(self.chain_id);
         }
 
-        state
-            .mailbox_index
-            .insert(instance_id.as_bytes().to_vec(), xt.id.clone());
+        let raw_key = instance_id.as_bytes().to_vec();
+        state.mailbox_index.insert(raw_key.clone(), xt.id.clone());
         state.pending.insert(xt.id.clone(), xt);
+
+        // Drain messages that arrived before the XT was registered (race window).
+        let buffered = state.drain_mailbox_buffer(&raw_key);
+        if !buffered.is_empty() {
+            if let Some(pending_xt) = state.pending.get_mut(instance_id) {
+                debug!(
+                    xt_id = instance_id,
+                    count = buffered.len(),
+                    "Attaching buffered mailbox messages to forwarded XT"
+                );
+                pending_xt.pending_mailbox.extend(buffered);
+            }
+        }
 
         info!(
             xt_id = instance_id,

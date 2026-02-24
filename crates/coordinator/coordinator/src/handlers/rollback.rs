@@ -29,6 +29,8 @@ impl DefaultCoordinator {
         state.last_sequence_num = Default::default();
         state.last_known_blocks.clear();
         state.chain_overlay.clear();
+        // Any orphan mailbox messages belong to the aborted period and are now invalid.
+        state.mailbox_buffer.clear();
 
         warn!(
             period_id = period_id.0,

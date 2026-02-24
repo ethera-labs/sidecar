@@ -19,6 +19,7 @@ use compose_metrics::SidecarMetrics;
 use compose_primitives_traits::{
     CoordinatorError, MailboxSender, PublisherClient, PutInboxBuilder,
 };
+use compose_proto::rollup_v2::MailboxMessage;
 
 use crate::model::chain_overlay::ChainOverlay;
 use crate::model::pending_xt::PendingXt;
@@ -47,6 +48,14 @@ pub(crate) struct CoordinatorState {
     pub submitted_fingerprints: HashMap<String, InstanceId>,
     /// Index from raw `instance_id` bytes → XT id for mailbox routing (O(1)).
     pub mailbox_index: HashMap<Vec<u8>, InstanceId>,
+    /// Mailbox messages that arrived before the XT was registered (race buffer).
+    ///
+    /// When sidecar-a's simulation completes very fast, it may send outbound
+    /// mailbox messages to sidecar-b before forwarding the XT.  Messages that
+    /// arrive while the XT is unknown are stored here keyed by raw `instance_id`
+    /// bytes and drained into `PendingXt::pending_mailbox` the moment the XT
+    /// is registered.  Entries are cleared on rollback when the period resets.
+    pub mailbox_buffer: HashMap<Vec<u8>, Vec<MailboxMessage>>,
 }
 
 impl CoordinatorState {
@@ -64,6 +73,7 @@ impl CoordinatorState {
             mailbox_notify: Arc::new(Notify::new()),
             submitted_fingerprints: HashMap::new(),
             mailbox_index: HashMap::new(),
+            mailbox_buffer: HashMap::new(),
         }
     }
 
@@ -77,6 +87,24 @@ impl CoordinatorState {
                     .map(|txs| !txs.is_empty())
                     .unwrap_or(false)
         })
+    }
+
+    /// Buffer a mailbox message for an XT that has not yet been registered.
+    ///
+    /// Called when a CIRC message arrives before the forwarded XT, which can
+    /// happen when sidecar-a's simulation completes in <1 ms and the outbound
+    /// message reaches sidecar-b before the XT forward does.
+    pub(crate) fn buffer_orphan_mailbox(&mut self, msg: MailboxMessage) {
+        self.mailbox_buffer
+            .entry(msg.instance_id.clone())
+            .or_default()
+            .push(msg);
+    }
+
+    /// Drain any buffered mailbox messages for the given raw `instance_id` key
+    /// and return them so the caller can attach them to the newly registered XT.
+    pub(crate) fn drain_mailbox_buffer(&mut self, raw_id: &[u8]) -> Vec<MailboxMessage> {
+        self.mailbox_buffer.remove(raw_id).unwrap_or_default()
     }
 }
 
@@ -177,6 +205,7 @@ impl DefaultCoordinator {
             .values()
             .map(|xt| (xt.instance_id.clone(), xt.id.clone()))
             .collect();
+        // Orphan mailbox buffer is cleared on rollback; no periodic eviction needed.
     }
 
     async fn cleanup_loop(&self) {

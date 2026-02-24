@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use compose_primitives::{ChainId, InstanceId, PeriodId, SequenceNumber};
 use compose_proto::conversions::chain_id_from_bytes;
 use compose_proto::rollup_v2::StartInstance;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 use crate::coordinator::DefaultCoordinator;
 use crate::model::pending_xt::PendingXt;
@@ -105,6 +105,19 @@ impl DefaultCoordinator {
             .mailbox_index
             .insert(msg.instance_id.clone(), instance_id.clone());
         state.pending.insert(instance_id.clone(), xt);
+
+        // Drain messages that arrived before the XT was registered (race window).
+        let buffered = state.drain_mailbox_buffer(&msg.instance_id);
+        if !buffered.is_empty() {
+            if let Some(pending_xt) = state.pending.get_mut(&instance_id) {
+                debug!(
+                    instance_id = %instance_id,
+                    count = buffered.len(),
+                    "Attaching buffered mailbox messages to new instance"
+                );
+                pending_xt.pending_mailbox.extend(buffered);
+            }
+        }
 
         info!(
             instance_id = %instance_id,
