@@ -4,7 +4,8 @@ use std::collections::{HashMap, HashSet};
 use std::time::Instant;
 
 use compose_primitives::{
-    ChainId, CrossRollupDependency, CrossRollupMessage, PeriodId, SequenceNumber, StateOverride,
+    ChainId, CrossRollupDependency, CrossRollupMessage, InstanceId, PeriodId, SequenceNumber,
+    StateOverride,
 };
 use compose_proto::rollup_v2::MailboxMessage;
 
@@ -12,8 +13,8 @@ use compose_proto::rollup_v2::MailboxMessage;
 /// submission through simulation, voting, and decision.
 #[derive(Debug, Clone)]
 pub struct PendingXt {
-    /// Hex-encoded instance identifier.
-    pub id: String,
+    /// Instance identifier (cheap-clone `Arc<str>`).
+    pub id: InstanceId,
     /// Raw instance ID bytes.
     pub instance_id: Vec<u8>,
     /// Period during which this XT was created.
@@ -74,7 +75,7 @@ pub struct PendingXt {
 impl PendingXt {
     pub fn new(id: String, instance_id: Vec<u8>) -> Self {
         Self {
-            id,
+            id: id.into(),
             instance_id,
             period_id: PeriodId(0),
             sequence_num: SequenceNumber(0),

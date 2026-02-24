@@ -83,7 +83,7 @@ mod tests {
             xt.raw_txs.insert(ChainId(88888), vec![vec![2]]);
             xt.local_vote = Some(true);
             xt.vote_sent = true;
-            state.pending.insert("xt-77777-1".to_string(), xt);
+            state.pending.insert(xt.id.clone(), xt);
         }
 
         coordinator
@@ -111,7 +111,7 @@ mod tests {
             let mut xt = PendingXt::new("xt-77777-2".to_string(), b"xt-77777-2".to_vec());
             xt.raw_txs.insert(ChainId(77777), vec![vec![1]]);
             xt.raw_txs.insert(ChainId(88888), vec![vec![2]]);
-            state.pending.insert("xt-77777-2".to_string(), xt);
+            state.pending.insert(xt.id.clone(), xt);
         }
 
         coordinator

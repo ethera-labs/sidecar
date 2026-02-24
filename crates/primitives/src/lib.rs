@@ -8,6 +8,7 @@ pub use alloy_rpc_types_eth::state::StateOverride;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::fmt;
+use std::sync::Arc;
 
 /// Unique identifier for a rollup chain.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, PartialOrd, Ord)]
@@ -117,6 +118,69 @@ impl fmt::Display for XtId {
     }
 }
 
+/// Cheap-clone cross-chain transaction instance identifier.
+///
+/// Backed by `Arc<str>` so that cloning is a reference-count bump rather
+/// than a heap allocation.  Implements `Borrow<str>` and `Deref<Target=str>`
+/// so it can be used as a `HashMap` key while still being looked up with `&str`.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct InstanceId(Arc<str>);
+
+impl InstanceId {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    /// Create an `InstanceId` for standalone mode (no publisher).
+    ///
+    /// Format: `xt-{chain_id}-{seq}` — human-readable and unique per sidecar.
+    /// This string is forwarded to peer sidecars as-is, so the format must
+    /// be stable across versions.
+    pub fn standalone(chain_id: ChainId, seq: u64) -> Self {
+        Self(format!("xt-{chain_id}-{seq}").into())
+    }
+
+    /// Create an `InstanceId` from raw bytes assigned by the Shared Publisher.
+    ///
+    /// The bytes are hex-encoded so the result is a printable ASCII string
+    /// that matches what `StartInstance::instance_id_hex()` returns.
+    pub fn from_publisher_bytes(bytes: &[u8]) -> Self {
+        Self(hex::encode(bytes).into())
+    }
+}
+
+impl std::ops::Deref for InstanceId {
+    type Target = str;
+    fn deref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Display for InstanceId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl From<String> for InstanceId {
+    fn from(s: String) -> Self {
+        Self(s.into())
+    }
+}
+
+impl From<&str> for InstanceId {
+    fn from(s: &str) -> Self {
+        Self(s.into())
+    }
+}
+
+impl std::borrow::Borrow<str> for InstanceId {
+    fn borrow(&self) -> &str {
+        &self.0
+    }
+}
+
 /// Status of a cross-chain transaction through its lifecycle.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -207,7 +271,7 @@ pub struct BuilderPollRequest {
     pub state_root: B256,
     pub timestamp: u64,
     pub gas_limit: u64,
-    pub state_overrides: Option<serde_json::Value>,
+    pub state_overrides: Option<StateOverride>,
 }
 
 /// Builder poll response to op-rbuilder.

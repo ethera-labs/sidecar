@@ -73,8 +73,8 @@ mod tests {
             let mut state = coordinator.state.write().await;
             state
                 .mailbox_index
-                .insert(instance_id.as_bytes().to_vec(), instance_id.clone());
-            state.pending.insert(instance_id.clone(), xt);
+                .insert(instance_id.as_bytes().to_vec(), xt.id.clone());
+            state.pending.insert(xt.id.clone(), xt);
         }
 
         let msg = MailboxMessage {
@@ -88,7 +88,7 @@ mod tests {
         coordinator.handle_mailbox_message(&msg).await.unwrap();
 
         let state = coordinator.state.read().await;
-        let updated = state.pending.get(&instance_id).unwrap();
+        let updated = state.pending.get(instance_id.as_str()).unwrap();
 
         assert_eq!(updated.pending_mailbox.len(), 1);
         assert_eq!(updated.pending_mailbox[0].label, "SEND");

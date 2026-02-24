@@ -6,7 +6,9 @@ use std::time::Duration;
 
 use compose_mailbox::traits::MailboxQueue;
 use compose_peer::traits::PeerCoordinator;
-use compose_primitives::{ChainId, ChainState, PeriodId, SequenceNumber, SuperblockNumber};
+use compose_primitives::{
+    ChainId, ChainState, InstanceId, PeriodId, SequenceNumber, SuperblockNumber,
+};
 use compose_simulation::traits::Simulator;
 use prost::Message;
 use tokio::sync::{Notify, RwLock};
@@ -27,7 +29,7 @@ use crate::pipeline::submission::{build_xt_request, xt_request_fingerprint};
 /// Shared coordinator state protected by a `RwLock`.
 #[derive(Debug)]
 pub(crate) struct CoordinatorState {
-    pub pending: HashMap<String, PendingXt>,
+    pub pending: HashMap<InstanceId, PendingXt>,
     pub chain_states: HashMap<ChainId, ChainState>,
     pub current_period_id: PeriodId,
     pub current_superblock_num: SuperblockNumber,
@@ -42,9 +44,9 @@ pub(crate) struct CoordinatorState {
     /// Notified whenever a mailbox message arrives, waking waiting simulations.
     pub mailbox_notify: Arc<Notify>,
     /// Maps XT fingerprints to instance IDs for standalone-mode deduplication.
-    pub submitted_fingerprints: HashMap<String, String>,
-    /// Index from raw `instance_id` bytes → string XT id for mailbox routing (O(1)).
-    pub mailbox_index: HashMap<Vec<u8>, String>,
+    pub submitted_fingerprints: HashMap<String, InstanceId>,
+    /// Index from raw `instance_id` bytes → XT id for mailbox routing (O(1)).
+    pub mailbox_index: HashMap<Vec<u8>, InstanceId>,
 }
 
 impl CoordinatorState {
@@ -327,10 +329,10 @@ impl DefaultCoordinator {
             // as the original XT is still pending. Once cleaned up, re-submission
             // is allowed (the fingerprint entry is pruned by cleanup).
             if let Some(existing_id) = state.submitted_fingerprints.get(&fingerprint) {
-                if state.pending.contains_key(existing_id) {
+                if state.pending.contains_key(existing_id.as_str()) {
                     let id = existing_id.clone();
                     info!(instance_id = %id, "Duplicate XT submission, returning existing ID");
-                    return Ok(id);
+                    return Ok(id.to_string());
                 }
                 // Original was cleaned up; remove the stale fingerprint entry.
                 state.submitted_fingerprints.remove(&fingerprint);
@@ -342,16 +344,18 @@ impl DefaultCoordinator {
 
             state.origin_seq = SequenceNumber(state.origin_seq.0 + 1);
             let seq = state.origin_seq;
-            let id = format!("xt-{}-{}", self.chain_id, seq.0);
+            let id = InstanceId::standalone(self.chain_id, seq.0);
 
             // Clone only for forwarding when a peer coordinator is configured;
             // `txs` itself is moved into the XT to avoid an unconditional clone.
             let txs_for_forward = self.peer_coordinator.as_ref().map(|_| txs.clone());
 
-            let mut xt = PendingXt::new(id.clone(), id.as_bytes().to_vec());
+            let mut xt = PendingXt::new(id.to_string(), id.as_bytes().to_vec());
             xt.origin_chain = Some(self.chain_id);
             xt.origin_seq = seq;
             xt.raw_txs = txs;
+            // Pre-lock so builder_poll won't spawn a duplicate simulation.
+            xt.locked_chains.insert(self.chain_id);
 
             state
                 .mailbox_index
@@ -359,9 +363,18 @@ impl DefaultCoordinator {
             state.pending.insert(id.clone(), xt);
             state.submitted_fingerprints.insert(fingerprint, id.clone());
             (id, txs_for_forward)
-        };
+        }; // write lock released here
 
         info!(instance_id = %instance_id, "Submitted XT locally (standalone mode)");
+
+        // Start simulation immediately so it is ready before the builder polls.
+        {
+            let coordinator = self.clone();
+            let id = instance_id.clone();
+            self.task_tracker.spawn(async move {
+                coordinator.process_xt(&id).await;
+            });
+        }
 
         if let Some(peer_coordinator) = &self.peer_coordinator {
             let id = instance_id.clone();
@@ -385,7 +398,7 @@ impl DefaultCoordinator {
             );
         }
 
-        Ok(instance_id)
+        Ok(instance_id.to_string())
     }
 }
 
@@ -404,7 +417,7 @@ mod tests {
             xt.raw_txs.insert(ChainId(77777), vec![vec![1]]);
             xt.decision = Some(true);
             xt.decided_at = Some(std::time::Instant::now());
-            state.pending.insert("xt-77777-1".to_string(), xt);
+            state.pending.insert(xt.id.clone(), xt);
         }
 
         let state = coordinator.state.read().await;
@@ -426,7 +439,7 @@ mod tests {
                     .checked_sub(Duration::from_secs(400))
                     .unwrap(),
             );
-            state.pending.insert("xt-77777-1".to_string(), xt);
+            state.pending.insert(xt.id.clone(), xt);
         }
 
         coordinator.cleanup(Duration::from_secs(300)).await;

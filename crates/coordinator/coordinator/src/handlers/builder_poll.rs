@@ -1,8 +1,9 @@
 //! Builder poll handling and hold/ready response logic.
 
-use alloy_rpc_types_eth::state::StateOverride;
-use compose_primitives::{BuilderPollRequest, BuilderPollResponse, ChainId, ChainState};
-use tracing::{debug, error, info, warn};
+use compose_primitives::{
+    BuilderPollRequest, BuilderPollResponse, ChainId, ChainState, InstanceId,
+};
+use tracing::{debug, error, info};
 
 use crate::coordinator::DefaultCoordinator;
 use crate::model::ordering::xt_less;
@@ -27,22 +28,6 @@ impl DefaultCoordinator {
 
         self.nonce_manager.reset_for_block(req.block_number).await;
 
-        // Parse the builder-provided JSON state overrides into the typed form at
-        // the HTTP boundary. Parsing failures are logged and treated as empty overrides.
-        let typed_overrides: Option<StateOverride> = req.state_overrides.as_ref().and_then(|v| {
-            match serde_json::from_value::<StateOverride>(v.clone()) {
-                Ok(o) => Some(o),
-                Err(e) => {
-                    warn!(
-                        chain_id = %req.chain_id,
-                        error = %e,
-                        "Failed to parse builder state overrides; proceeding without them"
-                    );
-                    None
-                }
-            }
-        });
-
         let state_snapshot = ChainState {
             chain_id: req.chain_id,
             block_number: req.block_number,
@@ -50,7 +35,7 @@ impl DefaultCoordinator {
             state_root: req.state_root,
             timestamp: req.timestamp,
             gas_limit: req.gas_limit,
-            state_overrides: typed_overrides,
+            state_overrides: req.state_overrides.clone(),
         };
 
         // Gather everything needed under the write lock, then release before
@@ -58,7 +43,7 @@ impl DefaultCoordinator {
         // Chain state is tracked globally in `state.chain_states` rather than
         // per-XT, so no per-XT chain_states field is needed.
         struct UndecidedInfo {
-            id: String,
+            id: InstanceId,
             is_locked: bool,
             vote_sent: bool,
             raw_tx_chain_ids: Vec<ChainId>,
@@ -72,7 +57,7 @@ impl DefaultCoordinator {
                 .chain_states
                 .insert(req.chain_id, state_snapshot.clone());
 
-            let mut entries = Vec::<String>::new();
+            let mut entries = Vec::<InstanceId>::new();
             for (id, xt) in &state.pending {
                 if !xt.raw_txs.contains_key(&req.chain_id) {
                     continue;
@@ -375,7 +360,7 @@ mod tests {
             let mut xt = PendingXt::new("xt-77777-1".to_string(), b"xt-77777-1".to_vec());
             xt.raw_txs.insert(ChainId(77777), vec![vec![0xde, 0xad]]);
             xt.vote_sent = true; // already voted; lock not re-triggered
-            state.pending.insert("xt-77777-1".to_string(), xt);
+            state.pending.insert(xt.id.clone(), xt);
         }
 
         let resp = coordinator
@@ -397,7 +382,7 @@ mod tests {
             xt.raw_txs.insert(ChainId(77777), vec![vec![1]]);
             xt.decision = Some(false);
             xt.decided_at = Some(std::time::Instant::now());
-            state.pending.insert("xt-77777-1".to_string(), xt);
+            state.pending.insert(xt.id.clone(), xt);
         }
 
         let resp = coordinator
@@ -419,7 +404,7 @@ mod tests {
             xt.raw_txs.insert(ChainId(77777), vec![vec![0xab, 0xcd]]);
             xt.decision = Some(true);
             xt.decided_at = Some(std::time::Instant::now());
-            state.pending.insert("xt-77777-1".to_string(), xt);
+            state.pending.insert(xt.id.clone(), xt);
         }
 
         let resp = coordinator

@@ -1,11 +1,11 @@
 //! Helpers for turning committed XTs into builder payloads.
 
-use compose_primitives::{ChainId, CrossRollupDependency, TransactionPayload};
+use compose_primitives::{ChainId, CrossRollupDependency, InstanceId, TransactionPayload};
 
 /// A committed XT ready to be delivered to the builder.
 #[derive(Debug)]
 pub struct DeliverableXt {
-    pub id: String,
+    pub id: InstanceId,
     pub put_inbox_txs: Vec<Vec<u8>>,
     pub raw_txs: Vec<Vec<u8>>,
     pub deps: Vec<CrossRollupDependency>,
@@ -34,7 +34,7 @@ pub fn build_transaction_payloads(deliverable: &[DeliverableXt]) -> Vec<Transact
             payloads.push(TransactionPayload {
                 raw: format!("0x{}", hex::encode(put_inbox_tx)),
                 required: true,
-                instance_id: entry.id.clone(),
+                instance_id: entry.id.to_string(),
             });
         }
 
@@ -42,7 +42,7 @@ pub fn build_transaction_payloads(deliverable: &[DeliverableXt]) -> Vec<Transact
             payloads.push(TransactionPayload {
                 raw: format!("0x{}", hex::encode(raw_tx)),
                 required: true,
-                instance_id: entry.id.clone(),
+                instance_id: entry.id.to_string(),
             });
         }
     }

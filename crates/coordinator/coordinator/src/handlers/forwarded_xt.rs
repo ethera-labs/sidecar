@@ -39,15 +39,22 @@ impl DefaultCoordinator {
             return Ok(());
         }
 
+        let has_local = clean_txs.contains_key(&self.chain_id);
+
         let mut xt = PendingXt::new(instance_id.to_string(), instance_id.as_bytes().to_vec());
         xt.raw_txs = clean_txs;
         xt.origin_chain = Some(origin_chain);
         xt.origin_seq = origin_seq;
 
+        // Pre-lock so builder_poll won't spawn a duplicate simulation.
+        if has_local {
+            xt.locked_chains.insert(self.chain_id);
+        }
+
         state
             .mailbox_index
-            .insert(instance_id.as_bytes().to_vec(), instance_id.to_string());
-        state.pending.insert(instance_id.to_string(), xt);
+            .insert(instance_id.as_bytes().to_vec(), xt.id.clone());
+        state.pending.insert(xt.id.clone(), xt);
 
         info!(
             xt_id = instance_id,
@@ -56,6 +63,17 @@ impl DefaultCoordinator {
             origin_seq = origin_seq.0,
             "Received forwarded XT from peer"
         );
+
+        // Release the write lock before spawning so process_xt can acquire it.
+        drop(state);
+
+        if has_local {
+            let coordinator = self.clone();
+            let id = instance_id.to_string();
+            self.task_tracker.spawn(async move {
+                coordinator.process_xt(&id).await;
+            });
+        }
 
         Ok(())
     }

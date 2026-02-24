@@ -103,19 +103,21 @@ impl DefaultCoordinator {
             }
         };
 
+        // Initialize local tracking once. These are refreshed from state only
+        // after a dep-wait cycle, not on every simulation attempt.
+        let (mut already_sent_msgs, mut fulfilled_deps) = {
+            let state = self.state.read().await;
+            match state.pending.get(instance_id) {
+                Some(xt) => (xt.outbound_messages.clone(), xt.fulfilled_deps.clone()),
+                None => return,
+            }
+        };
+
         // Simulate each transaction sequentially.
         for (tx_index, tx_bytes) in tx_bytes_list.iter().enumerate() {
             // Retry simulation until success or CIRC timeout. The
             // wait_for_dependencies deadline is the only bound on the loop.
             loop {
-                let (already_sent_msgs, fulfilled_deps) = {
-                    let state = self.state.read().await;
-                    match state.pending.get(instance_id) {
-                        Some(xt) => (xt.outbound_messages.clone(), xt.fulfilled_deps.clone()),
-                        None => return,
-                    }
-                };
-
                 let sim_start = StdInstant::now();
                 let sim_result = simulator
                     .simulate_with_mailbox(
@@ -154,6 +156,13 @@ impl DefaultCoordinator {
                         }
 
                         if result.success {
+                            // Extend local already_sent_msgs so the next TX in the
+                            // sequence doesn't re-send the same outbound messages.
+                            for msg in &result.outbound_messages {
+                                if !contains_message(&already_sent_msgs, msg) {
+                                    already_sent_msgs.push(msg.clone());
+                                }
+                            }
                             if let Err(e) = self
                                 .dispatch_outbound_mailbox(instance_id, &result.outbound_messages)
                                 .await
@@ -182,6 +191,19 @@ impl DefaultCoordinator {
                             );
                             let _ = self.send_vote(instance_id, false).await;
                             return;
+                        }
+
+                        // Deps were fulfilled: refresh locals from state once per
+                        // dep-wait cycle instead of once per simulation attempt.
+                        {
+                            let state = self.state.read().await;
+                            match state.pending.get(instance_id) {
+                                Some(xt) => {
+                                    already_sent_msgs = xt.outbound_messages.clone();
+                                    fulfilled_deps = xt.fulfilled_deps.clone();
+                                }
+                                None => return,
+                            }
                         }
                     }
                     Err(e) => {
@@ -495,10 +517,8 @@ mod tests {
 
         {
             let mut state = coordinator.state.write().await;
-            state.pending.insert(
-                "xt-77777-1".to_string(),
-                PendingXt::new("xt-77777-1".to_string(), b"xt-77777-1".to_vec()),
-            );
+            let xt = PendingXt::new("xt-77777-1".to_string(), b"xt-77777-1".to_vec());
+            state.pending.insert(xt.id.clone(), xt);
         }
 
         coordinator.send_vote("xt-77777-1", true).await.unwrap();
@@ -520,7 +540,7 @@ mod tests {
             xt.raw_txs.insert(ChainId(77777), vec![vec![1]]);
             xt.raw_txs.insert(ChainId(88888), vec![vec![2]]);
             xt.peer_votes.insert(ChainId(88888), true);
-            state.pending.insert("xt-77777-2".to_string(), xt);
+            state.pending.insert(xt.id.clone(), xt);
         }
 
         coordinator.send_vote("xt-77777-2", true).await.unwrap();
@@ -542,7 +562,7 @@ mod tests {
             xt.raw_txs.insert(ChainId(77777), vec![vec![1]]);
             xt.raw_txs.insert(ChainId(88888), vec![vec![2]]);
             xt.peer_votes.insert(ChainId(88888), false);
-            state.pending.insert("xt-77777-3".to_string(), xt);
+            state.pending.insert(xt.id.clone(), xt);
         }
 
         coordinator.send_vote("xt-77777-3", true).await.unwrap();
@@ -616,7 +636,7 @@ mod tests {
             let mut state = coordinator.state.write().await;
             let mut xt = PendingXt::new("xt-77777-10".to_string(), b"xt-77777-10".to_vec());
             xt.raw_txs.insert(ChainId(77777), vec![vec![0xab, 0xcd]]);
-            state.pending.insert("xt-77777-10".to_string(), xt);
+            state.pending.insert(xt.id.clone(), xt);
         }
 
         coordinator.process_xt("xt-77777-10").await;
@@ -644,7 +664,7 @@ mod tests {
             let mut state = coordinator.state.write().await;
             let mut xt = PendingXt::new("xt-77777-11".to_string(), b"xt-77777-11".to_vec());
             xt.raw_txs.insert(ChainId(77777), vec![vec![0xde, 0xad]]);
-            state.pending.insert("xt-77777-11".to_string(), xt);
+            state.pending.insert(xt.id.clone(), xt);
         }
 
         coordinator.process_xt("xt-77777-11").await;
@@ -664,7 +684,7 @@ mod tests {
             // XT has transactions only for a different chain.
             let mut xt = PendingXt::new("xt-77777-12".to_string(), b"xt-77777-12".to_vec());
             xt.raw_txs.insert(ChainId(88888), vec![vec![0xff]]);
-            state.pending.insert("xt-77777-12".to_string(), xt);
+            state.pending.insert(xt.id.clone(), xt);
         }
 
         coordinator.process_xt("xt-77777-12").await;

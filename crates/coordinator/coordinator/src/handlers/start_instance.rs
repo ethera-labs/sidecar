@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use compose_primitives::{ChainId, PeriodId, SequenceNumber};
+use compose_primitives::{ChainId, InstanceId, PeriodId, SequenceNumber};
 use compose_proto::conversions::chain_id_from_bytes;
 use compose_proto::rollup_v2::StartInstance;
 use tracing::{info, warn};
@@ -18,7 +18,7 @@ impl DefaultCoordinator {
     /// Process a new instance from the publisher. Validates the period and
     /// sequence, decodes transactions, and registers the XT.
     pub async fn handle_start_instance(&self, msg: &StartInstance) -> Result<(), CoordinatorError> {
-        let instance_id = msg.instance_id_hex();
+        let instance_id = InstanceId::from_publisher_bytes(&msg.instance_id);
         let xt_request = msg
             .xt_request
             .as_ref()
@@ -46,7 +46,9 @@ impl DefaultCoordinator {
         let mut state = self.state.write().await;
 
         if state.pending.contains_key(&instance_id) {
-            return Err(CoordinatorError::InstanceAlreadyPending(instance_id));
+            return Err(CoordinatorError::InstanceAlreadyPending(
+                instance_id.to_string(),
+            ));
         }
 
         if state.pending.len() >= MAX_PENDING_XTS {
@@ -89,10 +91,15 @@ impl DefaultCoordinator {
 
         state.last_sequence_num = msg_seq;
 
-        let mut xt = PendingXt::new(instance_id.clone(), msg.instance_id.clone());
+        let mut xt = PendingXt::new(instance_id.to_string(), msg.instance_id.clone());
         xt.period_id = msg_period;
         xt.sequence_num = msg_seq;
         xt.raw_txs = raw_txs;
+
+        // Pre-lock so builder_poll won't spawn a duplicate simulation.
+        if includes_local {
+            xt.locked_chains.insert(self.chain_id);
+        }
 
         state
             .mailbox_index
@@ -109,6 +116,17 @@ impl DefaultCoordinator {
 
         if let Some(m) = &self.metrics {
             m.xt_received_total.inc();
+        }
+
+        // Release the write lock before spawning so process_xt can acquire it.
+        drop(state);
+
+        if includes_local {
+            let coordinator = self.clone();
+            let id = instance_id.clone();
+            self.task_tracker.spawn(async move {
+                coordinator.process_xt(&id).await;
+            });
         }
 
         Ok(())
