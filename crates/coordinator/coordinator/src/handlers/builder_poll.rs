@@ -26,8 +26,6 @@ impl DefaultCoordinator {
             });
         }
 
-        self.nonce_manager.reset_for_block(req.block_number).await;
-
         let state_snapshot = ChainState {
             chain_id: req.chain_id,
             block_number: req.block_number,
