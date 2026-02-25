@@ -5,7 +5,6 @@
 
 pub mod builder;
 pub mod coordinator;
-pub mod decision;
 pub mod handlers;
 pub mod model;
 pub mod nonce_manager;
