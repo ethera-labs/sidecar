@@ -461,6 +461,18 @@ impl DefaultCoordinator {
                 expected_votes = expected,
                 "Made local decision (standalone mode)"
             );
+            if let Some(m) = &self.metrics {
+                m.xt_decision_latency_seconds.observe(
+                    self.state
+                        .read()
+                        .await
+                        .pending
+                        .get(instance_id)
+                        .map(|xt| xt.created_at.elapsed().as_secs_f64())
+                        .unwrap_or(0.0),
+                );
+                m.xt_pending_count.dec();
+            }
         }
 
         if !standalone_mode {

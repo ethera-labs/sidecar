@@ -205,7 +205,15 @@ impl DefaultCoordinator {
             .values()
             .map(|xt| (xt.instance_id.clone(), xt.id.clone()))
             .collect();
-        // Orphan mailbox buffer is cleared on rollback; no periodic eviction needed.
+        let stale_fps: Vec<String> = state
+            .submitted_fingerprints
+            .iter()
+            .filter(|(_, id)| !state.pending.contains_key(id.as_str()))
+            .map(|(fp, _)| fp.clone())
+            .collect();
+        for fp in stale_fps {
+            state.submitted_fingerprints.remove(&fp);
+        }
     }
 
     async fn cleanup_loop(&self) {
@@ -367,7 +375,12 @@ impl DefaultCoordinator {
                 state.submitted_fingerprints.remove(&fingerprint);
             }
 
-            if state.pending.len() >= MAX_PENDING_XTS {
+            let undecided_count = state
+                .pending
+                .values()
+                .filter(|xt| xt.decision.is_none())
+                .count();
+            if undecided_count >= MAX_PENDING_XTS {
                 return Err(CoordinatorError::TooManyPendingInstances(MAX_PENDING_XTS));
             }
 
@@ -394,6 +407,10 @@ impl DefaultCoordinator {
             (id, txs_for_forward)
         }; // write lock released here
 
+        if let Some(m) = &self.metrics {
+            m.xt_received_total.inc();
+            m.xt_pending_count.inc();
+        }
         info!(instance_id = %instance_id, "Submitted XT locally (standalone mode)");
 
         // Start simulation immediately so it is ready before the builder polls.

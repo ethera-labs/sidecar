@@ -54,36 +54,42 @@ impl PeerCoordinator for HttpPeerCoordinator {
         origin_seq: SequenceNumber,
     ) -> Result<(), PeerError> {
         let req = XtForwardRequest::new(instance_id.to_string(), txs, origin_chain, origin_seq);
+        let body = serde_json::to_vec(&req).map_err(|e| PeerError::Serialization(e.to_string()))?;
 
         let urls = self.all_peer_urls("/xt/forward");
-        let mut errors = Vec::new();
-        for (chain_id, url) in urls {
-            let body =
-                serde_json::to_vec(&req).map_err(|e| PeerError::Serialization(e.to_string()))?;
-
-            match self
-                .client
-                .post(&url)
-                .body(body)
-                .header("content-type", "application/json")
-                .send()
-                .await
-            {
-                Ok(resp) if resp.status().is_success() => {
-                    info!(chain_id = %chain_id, instance_id, "Forwarded XT to peer");
-                }
-                Ok(resp) => {
-                    let msg = format!("chain {chain_id} rejected forward: {}", resp.status());
-                    warn!(chain_id = %chain_id, status = %resp.status(), "Peer rejected forwarded XT");
-                    errors.push(msg);
-                }
-                Err(e) => {
-                    let msg = format!("chain {chain_id} forward failed: {e}");
-                    error!(chain_id = %chain_id, error = %e, "Failed to forward XT to peer");
-                    errors.push(msg);
+        let futs = urls.into_iter().map(|(chain_id, url)| {
+            let client = &self.client;
+            let body = body.clone();
+            let instance_id = instance_id.to_string();
+            async move {
+                match client
+                    .post(&url)
+                    .body(body)
+                    .header("content-type", "application/json")
+                    .send()
+                    .await
+                {
+                    Ok(resp) if resp.status().is_success() => {
+                        info!(chain_id = %chain_id, instance_id = %instance_id, "Forwarded XT to peer");
+                        None
+                    }
+                    Ok(resp) => {
+                        warn!(chain_id = %chain_id, status = %resp.status(), "Peer rejected forwarded XT");
+                        Some(format!("chain {chain_id} rejected forward: {}", resp.status()))
+                    }
+                    Err(e) => {
+                        error!(chain_id = %chain_id, error = %e, "Failed to forward XT to peer");
+                        Some(format!("chain {chain_id} forward failed: {e}"))
+                    }
                 }
             }
-        }
+        });
+
+        let errors: Vec<String> = futures::future::join_all(futs)
+            .await
+            .into_iter()
+            .flatten()
+            .collect();
 
         if errors.is_empty() {
             Ok(())
@@ -103,41 +109,50 @@ impl PeerCoordinator for HttpPeerCoordinator {
             chain_id: chain_id.0,
             vote,
         };
+        let body = serde_json::to_vec(&req).map_err(|e| PeerError::Serialization(e.to_string()))?;
 
         let urls = self.all_peer_urls("/xt/vote");
-        let mut errors = Vec::new();
-        for (peer_chain_id, url) in urls {
-            let body =
-                serde_json::to_vec(&req).map_err(|e| PeerError::Serialization(e.to_string()))?;
-
-            match self
-                .client
-                .post(&url)
-                .body(body)
-                .header("content-type", "application/json")
-                .send()
-                .await
-            {
-                Ok(resp) if resp.status().is_success() => {
-                    info!(
-                        peer_chain_id = %peer_chain_id,
-                        instance_id,
-                        vote,
-                        "Sent vote to peer"
-                    );
-                }
-                Ok(resp) => {
-                    let msg = format!("chain {peer_chain_id} rejected vote: {}", resp.status());
-                    warn!(peer_chain_id = %peer_chain_id, status = %resp.status(), "Peer rejected vote");
-                    errors.push(msg);
-                }
-                Err(e) => {
-                    let msg = format!("chain {peer_chain_id} vote failed: {e}");
-                    error!(peer_chain_id = %peer_chain_id, error = %e, "Failed to send vote to peer");
-                    errors.push(msg);
+        let futs = urls.into_iter().map(|(peer_chain_id, url)| {
+            let client = &self.client;
+            let body = body.clone();
+            let instance_id = instance_id.to_string();
+            async move {
+                match client
+                    .post(&url)
+                    .body(body)
+                    .header("content-type", "application/json")
+                    .send()
+                    .await
+                {
+                    Ok(resp) if resp.status().is_success() => {
+                        info!(
+                            peer_chain_id = %peer_chain_id,
+                            instance_id = %instance_id,
+                            vote,
+                            "Sent vote to peer"
+                        );
+                        None
+                    }
+                    Ok(resp) => {
+                        warn!(peer_chain_id = %peer_chain_id, status = %resp.status(), "Peer rejected vote");
+                        Some(format!(
+                            "chain {peer_chain_id} rejected vote: {}",
+                            resp.status()
+                        ))
+                    }
+                    Err(e) => {
+                        error!(peer_chain_id = %peer_chain_id, error = %e, "Failed to send vote to peer");
+                        Some(format!("chain {peer_chain_id} vote failed: {e}"))
+                    }
                 }
             }
-        }
+        });
+
+        let errors: Vec<String> = futures::future::join_all(futs)
+            .await
+            .into_iter()
+            .flatten()
+            .collect();
 
         if errors.is_empty() {
             Ok(())

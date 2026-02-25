@@ -1,7 +1,7 @@
 //! Start-period handling and period state transitions.
 
 use compose_primitives::{PeriodId, SuperblockNumber};
-use tracing::info;
+use tracing::{info, warn};
 
 use crate::coordinator::DefaultCoordinator;
 use compose_primitives_traits::CoordinatorError;
@@ -30,6 +30,7 @@ impl DefaultCoordinator {
         state.period_initialized = true;
         state.last_sequence_num = Default::default();
         state.last_known_blocks.clear();
+        state.chain_overlay.clear();
 
         info!(
             period_id = period_id.0,
@@ -37,6 +38,22 @@ impl DefaultCoordinator {
             aborted_stale = aborted,
             "Started new period"
         );
+
+        if let Some(builder) = &self.put_inbox_builder {
+            let b = builder.clone();
+            if let Err(e) = self
+                .nonce_manager
+                .resync(move || {
+                    let b = b.clone();
+                    async move { b.pending_nonce_at().await }
+                })
+                .await
+            {
+                warn!(error = %e, "Failed to resync putInbox nonce on period change");
+            } else if let Some(m) = &self.metrics {
+                m.nonce_resync_total.inc();
+            }
+        }
 
         Ok(())
     }

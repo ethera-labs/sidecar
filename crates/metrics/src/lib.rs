@@ -1,6 +1,7 @@
 //! Prometheus metrics definitions for the sidecar.
 
 use prometheus_client::metrics::counter::Counter;
+use prometheus_client::metrics::gauge::Gauge;
 use prometheus_client::metrics::histogram::Histogram;
 use prometheus_client::registry::Registry;
 
@@ -15,6 +16,10 @@ pub struct SidecarMetrics {
     pub xt_decided_abort_total: Counter<u64>,
     /// Wall-clock time of each simulation call, in seconds.
     pub simulation_duration_seconds: Histogram,
+    /// End-to-end XT latency from submission to decision, in seconds.
+    pub xt_decision_latency_seconds: Histogram,
+    /// Current number of undecided (in-flight) XTs.
+    pub xt_pending_count: Gauge,
     /// Builder polls answered with a hold (undecided XT blocking).
     pub builder_poll_hold_total: Counter<u64>,
     /// Builder polls answered with committed transactions.
@@ -27,6 +32,8 @@ pub struct SidecarMetrics {
     pub circ_messages_sent_total: Counter<u64>,
     /// Vote send failures (publisher unreachable or peer send error).
     pub vote_send_failed_total: Counter<u64>,
+    /// Number of putInbox nonce resyncs triggered.
+    pub nonce_resync_total: Counter<u64>,
 }
 
 impl SidecarMetrics {
@@ -59,6 +66,21 @@ impl SidecarMetrics {
             "sidecar_simulation_duration_seconds",
             "Wall-clock time of each EVM simulation call",
             simulation_duration_seconds.clone(),
+        );
+
+        let xt_decision_latency_seconds =
+            Histogram::new([0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0].into_iter());
+        registry.register(
+            "sidecar_xt_decision_latency_seconds",
+            "End-to-end XT latency from submission to decision",
+            xt_decision_latency_seconds.clone(),
+        );
+
+        let xt_pending_count = Gauge::default();
+        registry.register(
+            "sidecar_xt_pending",
+            "Current number of undecided in-flight cross-chain transactions",
+            xt_pending_count.clone(),
         );
 
         let builder_poll_hold_total = Counter::default();
@@ -103,17 +125,27 @@ impl SidecarMetrics {
             vote_send_failed_total.clone(),
         );
 
+        let nonce_resync_total = Counter::default();
+        registry.register(
+            "sidecar_nonce_resync",
+            "Number of putInbox nonce resyncs triggered",
+            nonce_resync_total.clone(),
+        );
+
         Self {
             xt_received_total,
             xt_decided_commit_total,
             xt_decided_abort_total,
             simulation_duration_seconds,
+            xt_decision_latency_seconds,
+            xt_pending_count,
             builder_poll_hold_total,
             builder_poll_deliver_total,
             builder_poll_empty_total,
             circ_messages_received_total,
             circ_messages_sent_total,
             vote_send_failed_total,
+            nonce_resync_total,
         }
     }
 }

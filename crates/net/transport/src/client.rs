@@ -121,8 +121,13 @@ impl Transport for QuicClient {
     }
 
     async fn send(&self, data: Bytes) -> Result<(), TransportError> {
-        let guard = self.connection.lock().await;
-        let conn = guard.as_ref().ok_or(TransportError::ConnectionClosed)?;
+        let conn = {
+            let guard = self.connection.lock().await;
+            guard
+                .as_ref()
+                .ok_or(TransportError::ConnectionClosed)?
+                .clone()
+        };
 
         let mut stream = conn
             .open_bi()

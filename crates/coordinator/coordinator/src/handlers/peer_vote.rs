@@ -58,6 +58,11 @@ impl DefaultCoordinator {
                 expected_votes = expected,
                 "Made local decision (standalone mode)"
             );
+            if let Some(m) = &self.metrics {
+                m.xt_decision_latency_seconds
+                    .observe(xt.created_at.elapsed().as_secs_f64());
+                m.xt_pending_count.dec();
+            }
         }
 
         Ok(())

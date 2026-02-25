@@ -195,6 +195,7 @@ impl DefaultCoordinator {
 
                 let deps = deps_for_chain(&xt.fulfilled_deps, req.chain_id);
 
+                xt.delivered_chains.insert(req.chain_id);
                 deliverables.push(DeliverableXt {
                     id: id.clone(),
                     put_inbox_txs: Vec::new(),
@@ -232,13 +233,6 @@ impl DefaultCoordinator {
                 deliverable_ids = ?deliverables.iter().map(|d| d.id.as_str()).collect::<Vec<_>>(),
                 "Delivering committed transactions to builder"
             );
-
-            let mut state = self.state.write().await;
-            for entry in &deliverables {
-                if let Some(xt) = state.pending.get_mut(&entry.id) {
-                    xt.delivered_chains.insert(req.chain_id);
-                }
-            }
 
             if let Some(m) = &self.metrics {
                 m.builder_poll_deliver_total.inc();

@@ -51,7 +51,12 @@ impl DefaultCoordinator {
             ));
         }
 
-        if state.pending.len() >= MAX_PENDING_XTS {
+        let undecided_count = state
+            .pending
+            .values()
+            .filter(|xt| xt.decision.is_none())
+            .count();
+        if undecided_count >= MAX_PENDING_XTS {
             if let Some(m) = &self.metrics {
                 m.xt_received_total.inc();
             }
@@ -129,6 +134,7 @@ impl DefaultCoordinator {
 
         if let Some(m) = &self.metrics {
             m.xt_received_total.inc();
+            m.xt_pending_count.inc();
         }
 
         // Release the write lock before spawning so process_xt can acquire it.

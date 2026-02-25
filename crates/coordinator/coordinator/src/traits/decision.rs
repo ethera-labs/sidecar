@@ -1,17 +1,7 @@
 //! Decision handler trait definitions.
-
-use async_trait::async_trait;
-
-use compose_primitives_traits::CoordinatorError;
-
-/// Decision handler for determining commit/abort outcomes.
-#[async_trait]
-pub trait DecisionHandler: Send + Sync + 'static {
-    /// Record a vote and potentially trigger a decision.
-    async fn record_vote(
-        &self,
-        instance_id: &str,
-        chain_id: u64,
-        vote: bool,
-    ) -> Result<Option<bool>, CoordinatorError>;
-}
+//!
+//! The `DecisionHandler` trait was part of an earlier design that separated
+//! vote collection from the coordinator. Decision logic is now handled
+//! directly by `DefaultCoordinator` methods (`maybe_make_standalone_decision`
+//! for standalone mode, `on_decision` for publisher mode). These modules
+//! are retained for documentation purposes.
