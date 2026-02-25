@@ -195,7 +195,6 @@ impl DefaultCoordinator {
 
                 let deps = deps_for_chain(&xt.fulfilled_deps, req.chain_id);
 
-                xt.delivered_chains.insert(req.chain_id);
                 deliverables.push(DeliverableXt {
                     id: id.clone(),
                     put_inbox_txs: Vec::new(),
@@ -227,6 +226,18 @@ impl DefaultCoordinator {
             }
 
             let transactions = build_transaction_payloads(&deliverables);
+
+            // Mark as delivered only after the response is fully built so
+            // concurrent polls can still pick up the XT if this one fails.
+            {
+                let mut state = self.state.write().await;
+                for entry in &deliverables {
+                    if let Some(xt) = state.pending.get_mut(&entry.id) {
+                        xt.delivered_chains.insert(req.chain_id);
+                    }
+                }
+            }
+
             info!(
                 chain_id = %req.chain_id,
                 tx_count = transactions.len(),
