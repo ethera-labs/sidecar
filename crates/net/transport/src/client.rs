@@ -24,6 +24,7 @@ pub struct QuicClient {
     codec: LengthPrefixCodec,
     endpoint: Endpoint,
     connection: Mutex<Option<quinn::Connection>>,
+    connect_lock: Mutex<()>,
     connected: AtomicBool,
 }
 
@@ -32,7 +33,10 @@ impl QuicClient {
         let tls_config = tls::insecure_client_config()?;
         let quic_config = quinn::crypto::rustls::QuicClientConfig::try_from(tls_config)
             .map_err(|e| TransportError::Tls(e.to_string()))?;
-        let quinn_config = quinn::ClientConfig::new(std::sync::Arc::new(quic_config));
+        let mut quinn_config = quinn::ClientConfig::new(std::sync::Arc::new(quic_config));
+        let mut transport_config = quinn::TransportConfig::default();
+        transport_config.keep_alive_interval(Some(config.ping_interval));
+        quinn_config.transport_config(Arc::new(transport_config));
 
         let mut endpoint =
             Endpoint::client("0.0.0.0:0".parse().unwrap()).map_err(TransportError::Io)?;
@@ -45,36 +49,50 @@ impl QuicClient {
             codec,
             endpoint,
             connection: Mutex::new(None),
+            connect_lock: Mutex::new(()),
             connected: AtomicBool::new(false),
         }))
     }
 
-    async fn mark_disconnected(&self) {
+    async fn mark_disconnected(&self, expected_conn_id: Option<usize>) {
+        let mut guard = self.connection.lock().await;
+        let should_clear = match (expected_conn_id, guard.as_ref()) {
+            (Some(id), Some(conn)) => conn.stable_id() == id,
+            (Some(_), None) => false,
+            (None, _) => true,
+        };
+
+        if !should_clear {
+            return;
+        }
+
         self.connected.store(false, Ordering::SeqCst);
-        if let Some(conn) = self.connection.lock().await.take() {
+        if let Some(conn) = guard.take() {
             conn.close(0u32.into(), b"connection lost");
         }
     }
 
+    async fn current_connection(&self) -> Option<quinn::Connection> {
+        self.connection.lock().await.as_ref().cloned()
+    }
+
     async fn ensure_connected(&self) -> Result<quinn::Connection, TransportError> {
-        if let Some(conn) = self.connection.lock().await.as_ref().cloned() {
+        if let Some(conn) = self.current_connection().await {
             return Ok(conn);
         }
 
         self.connect_with_retry().await?;
 
-        self.connection
-            .lock()
+        self.current_connection()
             .await
-            .as_ref()
-            .cloned()
             .ok_or(TransportError::ConnectionClosed)
     }
-}
 
-#[async_trait]
-impl Transport for QuicClient {
-    async fn connect(&self) -> Result<(), TransportError> {
+    async fn connect_once_locked(&self) -> Result<(), TransportError> {
+        if self.connection.lock().await.is_some() {
+            return Ok(());
+        }
+
         let mut resolved = tokio::net::lookup_host(&self.config.addr)
             .await
             .map_err(|e| TransportError::ConnectionRefused(e.to_string()))?;
@@ -117,8 +135,21 @@ impl Transport for QuicClient {
         info!(addr = %self.config.addr, client_id = %self.config.client_id, "Connected");
         Ok(())
     }
+}
+
+#[async_trait]
+impl Transport for QuicClient {
+    async fn connect(&self) -> Result<(), TransportError> {
+        let _guard = self.connect_lock.lock().await;
+        self.connect_once_locked().await
+    }
 
     async fn connect_with_retry(&self) -> Result<(), TransportError> {
+        let _guard = self.connect_lock.lock().await;
+        if self.connection.lock().await.as_ref().is_some() {
+            return Ok(());
+        }
+
         let max = if self.config.max_retries == 0 {
             u32::MAX
         } else {
@@ -126,7 +157,7 @@ impl Transport for QuicClient {
         };
 
         for attempt in 1..=max {
-            match self.connect().await {
+            match self.connect_once_locked().await {
                 Ok(()) => return Ok(()),
                 Err(e) => {
                     warn!(
@@ -148,11 +179,12 @@ impl Transport for QuicClient {
     async fn send(&self, data: Bytes) -> Result<(), TransportError> {
         for attempt in 1..=2 {
             let conn = self.ensure_connected().await?;
+            let conn_id = conn.stable_id();
 
             let mut stream = match conn.open_bi().await {
                 Ok((send_stream, _)) => send_stream,
                 Err(e) => {
-                    self.mark_disconnected().await;
+                    self.mark_disconnected(Some(conn_id)).await;
                     if attempt == 1 {
                         warn!(attempt, error = %e, "open_bi failed, retrying once");
                         continue;
@@ -165,7 +197,7 @@ impl Transport for QuicClient {
             match stream.write_all(&frame).await {
                 Ok(()) => {}
                 Err(quinn::WriteError::ConnectionLost(e)) => {
-                    self.mark_disconnected().await;
+                    self.mark_disconnected(Some(conn_id)).await;
                     if attempt == 1 {
                         warn!(attempt, error = %e, "write failed due to lost connection, retrying once");
                         continue;
@@ -178,7 +210,7 @@ impl Transport for QuicClient {
             match stream.finish() {
                 Ok(()) => return Ok(()),
                 Err(e) => {
-                    self.mark_disconnected().await;
+                    self.mark_disconnected(Some(conn_id)).await;
                     if attempt == 1 {
                         warn!(attempt, error = %e, "finish failed, retrying once");
                         continue;
@@ -194,6 +226,7 @@ impl Transport for QuicClient {
     async fn recv(&self) -> Result<Bytes, TransportError> {
         loop {
             let conn = self.ensure_connected().await?;
+            let conn_id = conn.stable_id();
 
             let (_, mut recv_stream) = match conn.accept_bi().await {
                 Ok(streams) => streams,
@@ -201,11 +234,11 @@ impl Transport for QuicClient {
                 | Err(quinn::ConnectionError::ConnectionClosed(_))
                 | Err(quinn::ConnectionError::LocallyClosed)
                 | Err(quinn::ConnectionError::TimedOut) => {
-                    self.mark_disconnected().await;
+                    self.mark_disconnected(Some(conn_id)).await;
                     continue;
                 }
                 Err(e) => {
-                    self.mark_disconnected().await;
+                    self.mark_disconnected(Some(conn_id)).await;
                     warn!(error = %e, "accept_bi failed, reconnecting");
                     continue;
                 }
@@ -215,7 +248,7 @@ impl Transport for QuicClient {
             match recv_stream.read_exact(&mut header).await {
                 Ok(()) => {}
                 Err(quinn::ReadExactError::ReadError(quinn::ReadError::ConnectionLost(e))) => {
-                    self.mark_disconnected().await;
+                    self.mark_disconnected(Some(conn_id)).await;
                     warn!(error = %e, "read header failed due to lost connection, reconnecting");
                     continue;
                 }
@@ -240,7 +273,7 @@ impl Transport for QuicClient {
                     return Ok(Bytes::from(payload));
                 }
                 Err(quinn::ReadExactError::ReadError(quinn::ReadError::ConnectionLost(e))) => {
-                    self.mark_disconnected().await;
+                    self.mark_disconnected(Some(conn_id)).await;
                     warn!(error = %e, "read payload failed due to lost connection, reconnecting");
                     continue;
                 }
@@ -260,11 +293,9 @@ impl Transport for QuicClient {
     }
 
     async fn close(&self) -> Result<(), TransportError> {
-        self.connected.store(false, Ordering::SeqCst);
-        if let Some(conn) = self.connection.lock().await.take() {
-            conn.close(0u32.into(), b"client closing");
-            debug!("Connection closed");
-        }
+        let _guard = self.connect_lock.lock().await;
+        self.mark_disconnected(None).await;
+        debug!("Connection closed");
         Ok(())
     }
 

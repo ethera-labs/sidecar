@@ -1,4 +1,3 @@
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -14,7 +13,6 @@ use prost::Message;
 
 pub struct QuicPublisherAdapter {
     client: Arc<QuicClient>,
-    connected: AtomicBool,
     chain_id: ChainId,
 }
 
@@ -22,7 +20,6 @@ impl QuicPublisherAdapter {
     pub fn new(client: Arc<QuicClient>, chain_id: ChainId) -> Self {
         Self {
             client,
-            connected: AtomicBool::new(false),
             chain_id,
         }
     }
@@ -31,7 +28,7 @@ impl QuicPublisherAdapter {
 impl std::fmt::Debug for QuicPublisherAdapter {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("QuicPublisherAdapter")
-            .field("connected", &self.connected.load(Ordering::SeqCst))
+            .field("connected", &self.client.is_connected())
             .field("chain_id", &self.chain_id)
             .finish()
     }
@@ -43,27 +40,21 @@ impl PublisherClient for QuicPublisherAdapter {
         self.client
             .connect()
             .await
-            .map_err(|e| CoordinatorError::Other(e.to_string()))?;
-        self.connected.store(true, Ordering::SeqCst);
-        Ok(())
+            .map_err(|e| CoordinatorError::Other(e.to_string()))
     }
 
     async fn connect_with_retry(&self) -> Result<(), CoordinatorError> {
         self.client
             .connect_with_retry()
             .await
-            .map_err(|e| CoordinatorError::Other(e.to_string()))?;
-        self.connected.store(true, Ordering::SeqCst);
-        Ok(())
+            .map_err(|e| CoordinatorError::Other(e.to_string()))
     }
 
     async fn disconnect(&self) -> Result<(), CoordinatorError> {
-        self.connected.store(false, Ordering::SeqCst);
         self.client
             .close()
             .await
-            .map_err(|e| CoordinatorError::Other(e.to_string()))?;
-        Ok(())
+            .map_err(|e| CoordinatorError::Other(e.to_string()))
     }
 
     async fn send_vote(&self, instance_id: &[u8], vote: bool) -> Result<(), CoordinatorError> {
@@ -96,6 +87,6 @@ impl PublisherClient for QuicPublisherAdapter {
     }
 
     fn is_connected(&self) -> bool {
-        self.connected.load(Ordering::SeqCst) && self.client.is_connected()
+        self.client.is_connected()
     }
 }

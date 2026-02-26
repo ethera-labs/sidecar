@@ -1,4 +1,3 @@
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -15,7 +14,6 @@ use prost::Message;
 /// Transport-agnostic: works with any `Transport` implementation (QUIC, TCP, etc.).
 pub struct PublisherConnection {
     transport: Arc<dyn Transport>,
-    connected: AtomicBool,
     chain_id: ChainId,
 }
 
@@ -23,7 +21,6 @@ impl PublisherConnection {
     pub fn new(transport: Arc<dyn Transport>, chain_id: ChainId) -> Self {
         Self {
             transport,
-            connected: AtomicBool::new(false),
             chain_id,
         }
     }
@@ -36,7 +33,7 @@ impl PublisherConnection {
 impl std::fmt::Debug for PublisherConnection {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("PublisherConnection")
-            .field("connected", &self.connected.load(Ordering::SeqCst))
+            .field("connected", &self.transport.is_connected())
             .field("chain_id", &self.chain_id)
             .finish()
     }
@@ -48,27 +45,21 @@ impl PublisherClient for PublisherConnection {
         self.transport
             .connect()
             .await
-            .map_err(|e| CoordinatorError::Other(e.to_string()))?;
-        self.connected.store(true, Ordering::SeqCst);
-        Ok(())
+            .map_err(|e| CoordinatorError::Other(e.to_string()))
     }
 
     async fn connect_with_retry(&self) -> Result<(), CoordinatorError> {
         self.transport
             .connect_with_retry()
             .await
-            .map_err(|e| CoordinatorError::Other(e.to_string()))?;
-        self.connected.store(true, Ordering::SeqCst);
-        Ok(())
+            .map_err(|e| CoordinatorError::Other(e.to_string()))
     }
 
     async fn disconnect(&self) -> Result<(), CoordinatorError> {
-        self.connected.store(false, Ordering::SeqCst);
         self.transport
             .close()
             .await
-            .map_err(|e| CoordinatorError::Other(e.to_string()))?;
-        Ok(())
+            .map_err(|e| CoordinatorError::Other(e.to_string()))
     }
 
     async fn send_vote(&self, instance_id: &[u8], vote: bool) -> Result<(), CoordinatorError> {
@@ -97,6 +88,6 @@ impl PublisherClient for PublisherConnection {
     }
 
     fn is_connected(&self) -> bool {
-        self.connected.load(Ordering::SeqCst) && self.transport.is_connected()
+        self.transport.is_connected()
     }
 }
