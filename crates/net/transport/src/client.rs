@@ -48,6 +48,28 @@ impl QuicClient {
             connected: AtomicBool::new(false),
         }))
     }
+
+    async fn mark_disconnected(&self) {
+        self.connected.store(false, Ordering::SeqCst);
+        if let Some(conn) = self.connection.lock().await.take() {
+            conn.close(0u32.into(), b"connection lost");
+        }
+    }
+
+    async fn ensure_connected(&self) -> Result<quinn::Connection, TransportError> {
+        if let Some(conn) = self.connection.lock().await.as_ref().cloned() {
+            return Ok(conn);
+        }
+
+        self.connect_with_retry().await?;
+
+        self.connection
+            .lock()
+            .await
+            .as_ref()
+            .cloned()
+            .ok_or(TransportError::ConnectionClosed)
+    }
 }
 
 #[async_trait]
@@ -86,7 +108,10 @@ impl Transport for QuicClient {
             .finish()
             .map_err(|e| TransportError::Quic(e.to_string()))?;
 
-        *self.connection.lock().await = Some(conn);
+        let mut guard = self.connection.lock().await;
+        if let Some(old) = guard.replace(conn) {
+            old.close(0u32.into(), b"replaced connection");
+        }
         self.connected.store(true, Ordering::SeqCst);
 
         info!(addr = %self.config.addr, client_id = %self.config.client_id, "Connected");
@@ -121,55 +146,117 @@ impl Transport for QuicClient {
     }
 
     async fn send(&self, data: Bytes) -> Result<(), TransportError> {
-        let conn = {
-            let guard = self.connection.lock().await;
-            guard
-                .as_ref()
-                .ok_or(TransportError::ConnectionClosed)?
-                .clone()
-        };
+        for attempt in 1..=2 {
+            let conn = self.ensure_connected().await?;
 
-        let mut stream = conn
-            .open_bi()
-            .await
-            .map_err(|e| TransportError::Quic(e.to_string()))?
-            .0;
+            let mut stream = match conn.open_bi().await {
+                Ok((send_stream, _)) => send_stream,
+                Err(e) => {
+                    self.mark_disconnected().await;
+                    if attempt == 1 {
+                        warn!(attempt, error = %e, "open_bi failed, retrying once");
+                        continue;
+                    }
+                    return Err(TransportError::Quic(e.to_string()));
+                }
+            };
 
-        let frame = self.codec.encode(&data)?;
-        stream
-            .write_all(&frame)
-            .await
-            .map_err(|e| TransportError::Quic(e.to_string()))?;
-        stream
-            .finish()
-            .map_err(|e| TransportError::Quic(e.to_string()))?;
+            let frame = self.codec.encode(&data)?;
+            match stream.write_all(&frame).await {
+                Ok(()) => {}
+                Err(quinn::WriteError::ConnectionLost(e)) => {
+                    self.mark_disconnected().await;
+                    if attempt == 1 {
+                        warn!(attempt, error = %e, "write failed due to lost connection, retrying once");
+                        continue;
+                    }
+                    return Err(TransportError::Quic(e.to_string()));
+                }
+                Err(e) => return Err(TransportError::Quic(e.to_string())),
+            }
 
-        Ok(())
+            match stream.finish() {
+                Ok(()) => return Ok(()),
+                Err(e) => {
+                    self.mark_disconnected().await;
+                    if attempt == 1 {
+                        warn!(attempt, error = %e, "finish failed, retrying once");
+                        continue;
+                    }
+                    return Err(TransportError::Quic(e.to_string()));
+                }
+            }
+        }
+
+        Err(TransportError::ConnectionClosed)
     }
 
     async fn recv(&self) -> Result<Bytes, TransportError> {
-        let conn = {
-            let guard = self.connection.lock().await;
-            guard
-                .as_ref()
-                .ok_or(TransportError::ConnectionClosed)?
-                .clone()
-        };
+        loop {
+            let conn = self.ensure_connected().await?;
 
-        let (_, mut recv_stream) = conn
-            .accept_bi()
-            .await
-            .map_err(|e| TransportError::Quic(e.to_string()))?;
+            let (_, mut recv_stream) = match conn.accept_bi().await {
+                Ok(streams) => streams,
+                Err(quinn::ConnectionError::ApplicationClosed { .. })
+                | Err(quinn::ConnectionError::ConnectionClosed(_))
+                | Err(quinn::ConnectionError::LocallyClosed)
+                | Err(quinn::ConnectionError::TimedOut) => {
+                    self.mark_disconnected().await;
+                    continue;
+                }
+                Err(e) => {
+                    self.mark_disconnected().await;
+                    warn!(error = %e, "accept_bi failed, reconnecting");
+                    continue;
+                }
+            };
 
-        let mut header = [0u8; 4];
-        recv_stream.read_exact(&mut header).await?;
-        let len = self.codec.decode_length(&header)?;
+            let mut header = [0u8; 4];
+            match recv_stream.read_exact(&mut header).await {
+                Ok(()) => {}
+                Err(quinn::ReadExactError::ReadError(quinn::ReadError::ConnectionLost(e))) => {
+                    self.mark_disconnected().await;
+                    warn!(error = %e, "read header failed due to lost connection, reconnecting");
+                    continue;
+                }
+                Err(quinn::ReadExactError::FinishedEarly(read)) => {
+                    warn!(
+                        bytes_read = read,
+                        "read header finished early, dropping stream"
+                    );
+                    continue;
+                }
+                Err(e) => {
+                    warn!(error = %e, "read header failed, dropping stream");
+                    continue;
+                }
+            }
 
-        let mut payload = vec![0u8; len];
-        recv_stream.read_exact(&mut payload).await?;
-
-        debug!(len, "Received message");
-        Ok(Bytes::from(payload))
+            let len = self.codec.decode_length(&header)?;
+            let mut payload = vec![0u8; len];
+            match recv_stream.read_exact(&mut payload).await {
+                Ok(()) => {
+                    debug!(len, "Received message");
+                    return Ok(Bytes::from(payload));
+                }
+                Err(quinn::ReadExactError::ReadError(quinn::ReadError::ConnectionLost(e))) => {
+                    self.mark_disconnected().await;
+                    warn!(error = %e, "read payload failed due to lost connection, reconnecting");
+                    continue;
+                }
+                Err(quinn::ReadExactError::FinishedEarly(read)) => {
+                    warn!(
+                        bytes_read = read,
+                        "read payload finished early, dropping stream"
+                    );
+                    continue;
+                }
+                Err(e) => {
+                    warn!(error = %e, "read payload failed, dropping stream");
+                    continue;
+                }
+            }
+        }
     }
 
     async fn close(&self) -> Result<(), TransportError> {

@@ -195,9 +195,6 @@ impl DefaultCoordinator {
 
                 let deps = deps_for_chain(&xt.fulfilled_deps, req.chain_id);
 
-                // Mark delivered under the same lock that checks it — concurrent
-                // polls see the flag immediately and skip, preventing double-delivery.
-                xt.delivered_chains.insert(req.chain_id);
                 deliverables.push(DeliverableXt {
                     id: id.clone(),
                     put_inbox_txs: Vec::new(),
@@ -217,17 +214,6 @@ impl DefaultCoordinator {
         if !deliverables.is_empty() {
             if let Err(e) = self.build_put_inbox_transactions(&mut deliverables).await {
                 error!(chain_id = %req.chain_id, error = %e, "Failed to build putInbox transactions");
-                // Roll back the delivered marks so the next poll can retry.
-                // Without this, a transient putInbox failure would permanently
-                // drop the XTs even though the builder never received them.
-                {
-                    let mut state = self.state.write().await;
-                    for entry in &deliverables {
-                        if let Some(xt) = state.pending.get_mut(&entry.id) {
-                            xt.delivered_chains.remove(&req.chain_id);
-                        }
-                    }
-                }
                 if let Some(m) = &self.metrics {
                     m.builder_poll_hold_total.inc();
                 }
@@ -240,6 +226,17 @@ impl DefaultCoordinator {
             }
 
             let transactions = build_transaction_payloads(&deliverables);
+
+            // Mark as delivered only after the response is fully built so
+            // concurrent polls can still pick up the XT if this one fails.
+            {
+                let mut state = self.state.write().await;
+                for entry in &deliverables {
+                    if let Some(xt) = state.pending.get_mut(&entry.id) {
+                        xt.delivered_chains.insert(req.chain_id);
+                    }
+                }
+            }
 
             info!(
                 chain_id = %req.chain_id,
