@@ -35,7 +35,12 @@ impl QuicClient {
             .map_err(|e| TransportError::Tls(e.to_string()))?;
         let mut quinn_config = quinn::ClientConfig::new(std::sync::Arc::new(quic_config));
         let mut transport_config = quinn::TransportConfig::default();
-        transport_config.keep_alive_interval(Some(config.ping_interval));
+        let keep_alive = if config.ping_interval.is_zero() {
+            None
+        } else {
+            Some(config.ping_interval)
+        };
+        transport_config.keep_alive_interval(keep_alive);
         quinn_config.transport_config(Arc::new(transport_config));
 
         let mut endpoint =
@@ -145,8 +150,7 @@ impl Transport for QuicClient {
     }
 
     async fn connect_with_retry(&self) -> Result<(), TransportError> {
-        let _guard = self.connect_lock.lock().await;
-        if self.connection.lock().await.as_ref().is_some() {
+        if self.current_connection().await.is_some() {
             return Ok(());
         }
 
@@ -157,7 +161,7 @@ impl Transport for QuicClient {
         };
 
         for attempt in 1..=max {
-            match self.connect_once_locked().await {
+            match self.connect().await {
                 Ok(()) => return Ok(()),
                 Err(e) => {
                     warn!(
