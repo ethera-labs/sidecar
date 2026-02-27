@@ -24,7 +24,6 @@ use compose_proto::rollup_v2::MailboxMessage;
 use crate::model::chain_overlay::ChainOverlay;
 use crate::model::pending_xt::PendingXt;
 use crate::model::xt_status::{determine_xt_status, XtStatusResponse};
-use crate::nonce_manager::DeferredNonceManager;
 use crate::pipeline::submission::{build_xt_request, xt_request_fingerprint};
 
 /// Shared coordinator state protected by a `RwLock`.
@@ -47,7 +46,7 @@ pub(crate) struct CoordinatorState {
     /// Maps XT fingerprints to instance IDs for standalone-mode deduplication.
     pub submitted_fingerprints: HashMap<String, InstanceId>,
     /// Oneshot channels waiting for the publisher to assign an instance ID
-    /// after an XtRequest is submitted. Keyed by fingerprint.
+    /// after an `XtRequest` is submitted. Keyed by fingerprint.
     pub pending_submissions: HashMap<String, oneshot::Sender<InstanceId>>,
     /// Index from raw `instance_id` bytes → XT id for mailbox routing (O(1)).
     pub mailbox_index: HashMap<Vec<u8>, InstanceId>,
@@ -119,7 +118,6 @@ impl CoordinatorState {
 pub struct DefaultCoordinator {
     pub(crate) chain_id: ChainId,
     pub(crate) state: Arc<RwLock<CoordinatorState>>,
-    pub(crate) nonce_manager: Arc<DeferredNonceManager>,
     pub(crate) simulator: Option<Arc<dyn Simulator>>,
     pub(crate) publisher: Option<Arc<dyn PublisherClient>>,
     pub(crate) mailbox_sender: Option<Arc<dyn MailboxSender>>,
@@ -155,7 +153,6 @@ impl DefaultCoordinator {
         Self {
             chain_id,
             state: Arc::new(RwLock::new(CoordinatorState::new())),
-            nonce_manager: Arc::new(DeferredNonceManager::new()),
             simulator,
             publisher,
             mailbox_sender,

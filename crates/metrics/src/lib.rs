@@ -32,8 +32,6 @@ pub struct SidecarMetrics {
     pub circ_messages_sent_total: Counter<u64>,
     /// Vote send failures (publisher unreachable or peer send error).
     pub vote_send_failed_total: Counter<u64>,
-    /// Number of putInbox nonce resyncs triggered.
-    pub nonce_resync_total: Counter<u64>,
 }
 
 impl SidecarMetrics {
@@ -125,13 +123,6 @@ impl SidecarMetrics {
             vote_send_failed_total.clone(),
         );
 
-        let nonce_resync_total = Counter::default();
-        registry.register(
-            "sidecar_nonce_resync",
-            "Number of putInbox nonce resyncs triggered",
-            nonce_resync_total.clone(),
-        );
-
         Self {
             xt_received_total,
             xt_decided_commit_total,
@@ -145,7 +136,6 @@ impl SidecarMetrics {
             circ_messages_received_total,
             circ_messages_sent_total,
             vote_send_failed_total,
-            nonce_resync_total,
         }
     }
 }

@@ -39,24 +39,6 @@ impl DefaultCoordinator {
             "Rollback received, all undecided instances aborted"
         );
 
-        drop(state);
-
-        if let Some(builder) = &self.put_inbox_builder {
-            let b = builder.clone();
-            if let Err(e) = self
-                .nonce_manager
-                .resync(move || {
-                    let b = b.clone();
-                    async move { b.pending_nonce_at().await }
-                })
-                .await
-            {
-                warn!(error = %e, "Failed to resync putInbox nonce on rollback");
-            } else if let Some(m) = &self.metrics {
-                m.nonce_resync_total.inc();
-            }
-        }
-
         Ok(())
     }
 }

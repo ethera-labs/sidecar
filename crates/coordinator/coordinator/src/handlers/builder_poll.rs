@@ -279,14 +279,15 @@ impl DefaultCoordinator {
         }
     }
 
+    /// Build signed putInbox transactions for each dependency in the batch.
+    ///
+    /// Fetches the pending nonce from the RPC at the start of each delivery and
+    /// increments locally within the batch.
     async fn build_put_inbox_transactions(
         &self,
         deliverables: &mut [DeliverableXt],
     ) -> Result<(), CoordinatorError> {
-        let total_deps = deliverables
-            .iter()
-            .map(|entry| entry.deps.len())
-            .sum::<usize>();
+        let total_deps: usize = deliverables.iter().map(|entry| entry.deps.len()).sum();
         if total_deps == 0 {
             return Ok(());
         }
@@ -297,14 +298,7 @@ impl DefaultCoordinator {
             .cloned()
             .ok_or(CoordinatorError::PutInboxNotConfigured)?;
 
-        let nonce_builder = builder.clone();
-        let mut next_nonce = self
-            .nonce_manager
-            .reserve(total_deps, move || {
-                let builder = nonce_builder.clone();
-                async move { builder.pending_nonce_at().await }
-            })
-            .await?;
+        let mut next_nonce = builder.pending_nonce_at().await?;
 
         for entry in deliverables.iter_mut() {
             for dep in &entry.deps {
