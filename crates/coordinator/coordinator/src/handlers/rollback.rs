@@ -30,6 +30,7 @@ impl DefaultCoordinator {
         state.last_known_blocks.clear();
         state.chain_overlay.clear();
         state.mailbox_buffer.clear();
+        state.pending_submissions.clear();
 
         warn!(
             period_id = period_id.0,

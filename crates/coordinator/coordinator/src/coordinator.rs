@@ -11,7 +11,7 @@ use compose_primitives::{
 };
 use compose_simulation::traits::Simulator;
 use prost::Message;
-use tokio::sync::{Notify, RwLock};
+use tokio::sync::{Notify, RwLock, oneshot};
 use tokio_util::task::TaskTracker;
 use tracing::{error, info, warn};
 
@@ -46,6 +46,9 @@ pub(crate) struct CoordinatorState {
     pub mailbox_notify: Arc<Notify>,
     /// Maps XT fingerprints to instance IDs for standalone-mode deduplication.
     pub submitted_fingerprints: HashMap<String, InstanceId>,
+    /// Oneshot channels waiting for the publisher to assign an instance ID
+    /// after an XtRequest is submitted. Keyed by fingerprint.
+    pub pending_submissions: HashMap<String, oneshot::Sender<InstanceId>>,
     /// Index from raw `instance_id` bytes → XT id for mailbox routing (O(1)).
     pub mailbox_index: HashMap<Vec<u8>, InstanceId>,
     /// Mailbox messages that arrived before the XT was registered (race buffer).
@@ -72,6 +75,7 @@ impl CoordinatorState {
             chain_overlay: HashMap::new(),
             mailbox_notify: Arc::new(Notify::new()),
             submitted_fingerprints: HashMap::new(),
+            pending_submissions: HashMap::new(),
             mailbox_index: HashMap::new(),
             mailbox_buffer: HashMap::new(),
         }
@@ -214,6 +218,10 @@ impl DefaultCoordinator {
         for fp in stale_fps {
             state.submitted_fingerprints.remove(&fp);
         }
+        // Drop submission channels where the caller already timed out.
+        state
+            .pending_submissions
+            .retain(|_, tx| !tx.is_closed());
     }
 
     async fn cleanup_loop(&self) {
@@ -224,7 +232,7 @@ impl DefaultCoordinator {
         }
     }
 
-    /// Query the status of a cross-chain transaction.
+    /// Query the status of a cross-chain transaction by instance ID.
     pub async fn get_xt_status(
         &self,
         instance_id: &str,
@@ -235,11 +243,9 @@ impl DefaultCoordinator {
             .get(instance_id)
             .ok_or_else(|| CoordinatorError::InstanceNotFound(instance_id.to_string()))?;
 
-        let status = determine_xt_status(xt);
-
         Ok(XtStatusResponse {
             instance_id: instance_id.to_string(),
-            status,
+            status: determine_xt_status(xt),
             decision: xt.decision,
         })
     }
@@ -332,6 +338,14 @@ impl DefaultCoordinator {
         let xt_request = build_xt_request(&txs);
         let fingerprint = xt_request_fingerprint(&xt_request);
 
+        // Register a channel so handle_start_instance can resolve the
+        // publisher-assigned instance_id back to this caller.
+        let (tx, rx) = oneshot::channel();
+        {
+            let mut state = self.state.write().await;
+            state.pending_submissions.insert(fingerprint.clone(), tx);
+        }
+
         let wire = compose_proto::rollup_v2::WireMessage {
             sender_id: String::new(),
             payload: Some(compose_proto::rollup_v2::wire_message::Payload::XtRequest(
@@ -340,13 +354,31 @@ impl DefaultCoordinator {
         };
         let data = wire.encode_to_vec();
 
-        publisher
-            .send_raw(&data)
-            .await
-            .map_err(|e| CoordinatorError::Other(format!("failed to send XT to publisher: {e}")))?;
+        if let Err(e) = publisher.send_raw(&data).await {
+            let mut state = self.state.write().await;
+            state.pending_submissions.remove(&fingerprint);
+            return Err(CoordinatorError::Other(format!(
+                "failed to send XT to publisher: {e}"
+            )));
+        }
 
-        info!(fingerprint = %fingerprint, "Submitted XT to publisher");
-        Ok(fingerprint)
+        // Wait for the publisher to respond with StartInstance, which carries
+        // the canonical instance_id.
+        let instance_id = tokio::time::timeout(Duration::from_secs(10), rx)
+            .await
+            .map_err(|_| {
+                CoordinatorError::Other(
+                    "timed out waiting for publisher to assign instance_id".to_string(),
+                )
+            })?
+            .map_err(|_| {
+                CoordinatorError::Other(
+                    "publisher submission channel dropped".to_string(),
+                )
+            })?;
+
+        info!(instance_id = %instance_id, "Submitted XT to publisher");
+        Ok(instance_id.to_string())
     }
 
     async fn submit_xt_standalone(

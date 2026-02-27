@@ -9,6 +9,7 @@ use tracing::{debug, info, warn};
 
 use crate::coordinator::DefaultCoordinator;
 use crate::model::pending_xt::PendingXt;
+use crate::pipeline::submission::xt_request_fingerprint;
 use compose_primitives_traits::CoordinatorError;
 
 /// Maximum number of pending XTs before new submissions are rejected.
@@ -110,6 +111,13 @@ impl DefaultCoordinator {
             .mailbox_index
             .insert(msg.instance_id.clone(), instance_id.clone());
         state.pending.insert(instance_id.clone(), xt);
+
+        // If this XT was locally submitted, resolve the waiting caller with
+        // the publisher-assigned instance_id.
+        let fingerprint = xt_request_fingerprint(xt_request);
+        if let Some(tx) = state.pending_submissions.remove(&fingerprint) {
+            let _ = tx.send(instance_id.clone());
+        }
 
         // Drain messages that arrived before the XT was registered (race window).
         let buffered = state.drain_mailbox_buffer(&msg.instance_id);
