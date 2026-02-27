@@ -5,8 +5,8 @@ use bytes::Bytes;
 use compose_coordinator::error::CoordinatorError;
 use compose_coordinator::traits::publisher::PublisherClient;
 use compose_primitives::ChainId;
-use compose_proto::conversions::chain_id_to_bytes;
-use compose_proto::rollup_v2::{wire_message, Vote, WireMessage, XtId};
+use compose_proto::conversions::chain_id_to_proto;
+use compose_proto::rollup_v2::{wire_message, Vote, WireMessage};
 use compose_transport::client::QuicClient;
 use compose_transport::traits::Transport;
 use prost::Message;
@@ -61,10 +61,8 @@ impl PublisherClient for QuicPublisherAdapter {
         let msg = WireMessage {
             sender_id: String::new(),
             payload: Some(wire_message::Payload::Vote(Vote {
-                sender_chain_id: chain_id_to_bytes(self.chain_id),
-                xt_id: Some(XtId {
-                    hash: instance_id.to_vec(),
-                }),
+                instance_id: instance_id.to_vec(),
+                chain_id: chain_id_to_proto(self.chain_id),
                 vote,
             })),
         };

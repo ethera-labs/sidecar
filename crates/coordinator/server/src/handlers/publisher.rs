@@ -21,13 +21,9 @@ pub async fn handle_publisher_message(coordinator: Arc<DefaultCoordinator>, data
 
     match msg.payload {
         Some(wire_message::Payload::Decided(decided)) => {
-            let xt_id = decided
-                .xt_id
-                .as_ref()
-                .map(|id| hex::encode(&id.hash))
-                .unwrap_or_default();
-            if let Err(e) = coordinator.on_decision(&xt_id, decided.decision).await {
-                error!(error = %e, xt_id, "Failed to handle decision");
+            let instance_id = hex::encode(&decided.instance_id);
+            if let Err(e) = coordinator.on_decision(&instance_id, decided.decision).await {
+                error!(error = %e, instance_id, "Failed to handle decision");
             }
         }
         Some(wire_message::Payload::StartInstance(start_instance)) => {
@@ -55,7 +51,7 @@ pub async fn handle_publisher_message(coordinator: Arc<DefaultCoordinator>, data
             if let Err(e) = coordinator
                 .handle_rollback(
                     PeriodId(rollback.period_id),
-                    rollback.last_finalized_superblock_num,
+                    rollback.last_finalized_superblock_number,
                     &rollback.last_finalized_superblock_hash,
                 )
                 .await
