@@ -7,6 +7,7 @@ pub mod builder;
 pub mod coordinator;
 pub mod handlers;
 pub mod model;
+pub mod nonce_manager;
 pub mod pipeline;
 pub mod traits;
 

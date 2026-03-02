@@ -11,7 +11,7 @@ use compose_primitives::{
 };
 use compose_simulation::traits::Simulator;
 use prost::Message;
-use tokio::sync::{Notify, RwLock, oneshot};
+use tokio::sync::{oneshot, Notify, RwLock};
 use tokio_util::task::TaskTracker;
 use tracing::{error, info, warn};
 
@@ -24,6 +24,7 @@ use compose_proto::rollup_v2::MailboxMessage;
 use crate::model::chain_overlay::ChainOverlay;
 use crate::model::pending_xt::PendingXt;
 use crate::model::xt_status::{determine_xt_status, XtStatusResponse};
+use crate::nonce_manager::DeferredNonceManager;
 use crate::pipeline::submission::{build_xt_request, xt_request_fingerprint};
 
 /// Shared coordinator state protected by a `RwLock`.
@@ -118,6 +119,7 @@ impl CoordinatorState {
 pub struct DefaultCoordinator {
     pub(crate) chain_id: ChainId,
     pub(crate) state: Arc<RwLock<CoordinatorState>>,
+    pub(crate) nonce_manager: Arc<DeferredNonceManager>,
     pub(crate) simulator: Option<Arc<dyn Simulator>>,
     pub(crate) publisher: Option<Arc<dyn PublisherClient>>,
     pub(crate) mailbox_sender: Option<Arc<dyn MailboxSender>>,
@@ -153,6 +155,7 @@ impl DefaultCoordinator {
         Self {
             chain_id,
             state: Arc::new(RwLock::new(CoordinatorState::new())),
+            nonce_manager: Arc::new(DeferredNonceManager::new()),
             simulator,
             publisher,
             mailbox_sender,
@@ -216,9 +219,7 @@ impl DefaultCoordinator {
             state.submitted_fingerprints.remove(&fp);
         }
         // Drop submission channels where the caller already timed out.
-        state
-            .pending_submissions
-            .retain(|_, tx| !tx.is_closed());
+        state.pending_submissions.retain(|_, tx| !tx.is_closed());
     }
 
     async fn cleanup_loop(&self) {
@@ -369,9 +370,7 @@ impl DefaultCoordinator {
                 )
             })?
             .map_err(|_| {
-                CoordinatorError::Other(
-                    "publisher submission channel dropped".to_string(),
-                )
+                CoordinatorError::Other("publisher submission channel dropped".to_string())
             })?;
 
         info!(instance_id = %instance_id, "Submitted XT to publisher");
