@@ -65,6 +65,10 @@ impl PutInboxTxBuilder {
 
 #[async_trait]
 impl PutInboxBuilder for PutInboxTxBuilder {
+    fn signer_address(&self) -> Address {
+        self.signer_address
+    }
+
     async fn pending_nonce_at(&self) -> Result<u64, CoordinatorError> {
         let url = self
             .rpc_url

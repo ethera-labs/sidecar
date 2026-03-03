@@ -1,7 +1,8 @@
 //! Builder poll handling and hold/ready response logic.
 
+use alloy::primitives::Address;
 use compose_primitives::{
-    BuilderPollRequest, BuilderPollResponse, ChainId, ChainState, InstanceId,
+    BuilderPollRequest, BuilderPollResponse, ChainId, ChainState, InstanceId, StateOverride,
 };
 use tracing::{debug, error, info};
 
@@ -212,7 +213,10 @@ impl DefaultCoordinator {
         );
 
         if !deliverables.is_empty() {
-            if let Err(e) = self.build_put_inbox_transactions(&mut deliverables).await {
+            if let Err(e) = self
+                .build_put_inbox_transactions(&mut deliverables, req.state_overrides.as_ref())
+                .await
+            {
                 error!(chain_id = %req.chain_id, error = %e, "Failed to build putInbox transactions");
                 if let Some(m) = &self.metrics {
                     m.builder_poll_hold_total.inc();
@@ -280,9 +284,15 @@ impl DefaultCoordinator {
     }
 
     /// Build signed putInbox transactions for each dependency in the batch.
+    ///
+    /// When `state_overrides` is provided and contains the coordinator's nonce,
+    /// that value is used instead of the chain RPC. This ensures nonces match
+    /// the builder's in-progress state when multiple flashblocks deliver
+    /// putInbox txs in the same block.
     async fn build_put_inbox_transactions(
         &self,
         deliverables: &mut [DeliverableXt],
+        state_overrides: Option<&StateOverride>,
     ) -> Result<(), CoordinatorError> {
         let total_deps = deliverables
             .iter()
@@ -298,14 +308,23 @@ impl DefaultCoordinator {
             .cloned()
             .ok_or(CoordinatorError::PutInboxNotConfigured)?;
 
-        let nonce_builder = builder.clone();
-        let mut next_nonce = self
-            .nonce_manager
-            .reserve(total_deps, move || {
-                let builder = nonce_builder.clone();
-                async move { builder.pending_nonce_at().await }
-            })
-            .await?;
+        let base_nonce =
+            state_overrides.and_then(|o| coordinator_nonce_from_overrides(o, builder.signer_address()));
+
+        let mut next_nonce = if let Some(base) = base_nonce {
+            self.nonce_manager.resync(|| async { Ok(base) }).await?;
+            self.nonce_manager
+                .reserve(total_deps, || async { panic!("resync already set base") })
+                .await?
+        } else {
+            let nonce_builder = builder.clone();
+            self.nonce_manager
+                .reserve(total_deps, move || {
+                    let builder = nonce_builder.clone();
+                    async move { builder.pending_nonce_at().await }
+                })
+                .await?
+        };
 
         for entry in deliverables.iter_mut() {
             for dep in &entry.deps {
@@ -419,4 +438,8 @@ mod tests {
         assert_eq!(resp.transactions.len(), 1);
         assert_eq!(resp.transactions[0].instance_id, "xt-77777-1");
     }
+}
+
+fn coordinator_nonce_from_overrides(overrides: &StateOverride, signer: Address) -> Option<u64> {
+    overrides.get(&signer).and_then(|acct| acct.nonce)
 }

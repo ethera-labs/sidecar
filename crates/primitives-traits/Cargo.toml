@@ -10,6 +10,7 @@ license.workspace = true
 workspace = true
 
 [dependencies]
+alloy.workspace = true
 compose-primitives.workspace = true
 compose-proto.workspace = true
 async-trait.workspace = true
