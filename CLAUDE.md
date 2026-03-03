@@ -42,7 +42,7 @@ just install-hooks  # installs pre-commit hooks (requires: pip install pre-commi
 
 ## Toolchain & Formatting
 
-- Rust **1.88** (pinned in `rust-toolchain.toml`)
+- Rust **1.91** (pinned in `rust-toolchain.toml`)
 - `rustfmt.toml`: `max_width = 100`, `imports_granularity = "Crate"`, `group_imports = "StdExternalCrate"`
 - Workspace lints in `Cargo.toml` enforce `rust_2018_idioms`, `unused_must_use` (deny), and a broad set of clippy style
   lints
