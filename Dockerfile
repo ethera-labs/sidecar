@@ -20,6 +20,4 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY --from=builder /app/target/release/sidecar /usr/local/bin/sidecar
 
-EXPOSE 8080
-
 ENTRYPOINT ["/usr/local/bin/sidecar"]
