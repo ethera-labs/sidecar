@@ -7,7 +7,7 @@ use compose_primitives::{
     ChainId, CrossRollupDependency, CrossRollupMessage, InstanceId, PeriodId, SequenceNumber,
     StateOverride,
 };
-use compose_proto::rollup_v2::MailboxMessage;
+use compose_spec_proto::MailboxMessage;
 
 /// A cross-chain transaction in flight, tracking its full lifecycle from
 /// submission through simulation, voting, and decision.

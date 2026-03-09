@@ -308,8 +308,8 @@ impl DefaultCoordinator {
             .cloned()
             .ok_or(CoordinatorError::PutInboxNotConfigured)?;
 
-        let base_nonce =
-            state_overrides.and_then(|o| coordinator_nonce_from_overrides(o, builder.signer_address()));
+        let base_nonce = state_overrides
+            .and_then(|o| coordinator_nonce_from_overrides(o, builder.signer_address()));
 
         let mut next_nonce = if let Some(base) = base_nonce {
             self.nonce_manager.resync(|| async { Ok(base) }).await?;
@@ -338,6 +338,10 @@ impl DefaultCoordinator {
 
         Ok(())
     }
+}
+
+fn coordinator_nonce_from_overrides(overrides: &StateOverride, signer: Address) -> Option<u64> {
+    overrides.get(&signer).and_then(|acct| acct.nonce)
 }
 
 #[cfg(test)]
@@ -438,8 +442,4 @@ mod tests {
         assert_eq!(resp.transactions.len(), 1);
         assert_eq!(resp.transactions[0].instance_id, "xt-77777-1");
     }
-}
-
-fn coordinator_nonce_from_overrides(overrides: &StateOverride, signer: Address) -> Option<u64> {
-    overrides.get(&signer).and_then(|acct| acct.nonce)
 }

@@ -3,8 +3,7 @@
 use std::collections::HashMap;
 
 use compose_primitives::ChainId;
-use compose_proto::conversions::chain_id_to_proto;
-use compose_proto::rollup_v2::{TransactionRequest, XtRequest};
+use compose_spec_proto::{TransactionRequest, XtRequest};
 use prost::Message;
 use sha2::{Digest, Sha256};
 
@@ -27,7 +26,7 @@ pub fn build_xt_request(txs: &HashMap<ChainId, Vec<Vec<u8>>>) -> XtRequest {
                 return None;
             }
             Some(TransactionRequest {
-                chain_id: chain_id_to_proto(*chain_id),
+                chain_id: chain_id.0,
                 transaction: chain_txs.clone(),
             })
         })
@@ -58,10 +57,7 @@ mod tests {
         let req = build_xt_request(&txs);
         assert_eq!(req.transaction_requests.len(), 2);
         // First entry should be chain 901.
-        assert_eq!(
-            compose_proto::conversions::chain_id_from_proto(req.transaction_requests[0].chain_id),
-            ChainId(901)
-        );
+        assert_eq!(ChainId(req.transaction_requests[0].chain_id), ChainId(901));
     }
 
     #[test]

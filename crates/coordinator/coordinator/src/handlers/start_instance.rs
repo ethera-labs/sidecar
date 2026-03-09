@@ -3,8 +3,7 @@
 use std::collections::HashMap;
 
 use compose_primitives::{ChainId, InstanceId, PeriodId, SequenceNumber};
-use compose_proto::conversions::chain_id_from_proto;
-use compose_proto::rollup_v2::StartInstance;
+use compose_spec_proto::StartInstance;
 use tracing::{debug, info, warn};
 
 use crate::coordinator::DefaultCoordinator;
@@ -28,7 +27,7 @@ impl DefaultCoordinator {
         // Check if local chain participates.
         let mut includes_local = false;
         for req in &xt_request.transaction_requests {
-            let chain_id = chain_id_from_proto(req.chain_id);
+            let chain_id = ChainId(req.chain_id);
             if chain_id == self.chain_id && !req.transaction.is_empty() {
                 includes_local = true;
                 break;
@@ -38,7 +37,7 @@ impl DefaultCoordinator {
         // Decode transactions per chain.
         let mut raw_txs: HashMap<ChainId, Vec<Vec<u8>>> = HashMap::new();
         for req in &xt_request.transaction_requests {
-            let chain_id = chain_id_from_proto(req.chain_id);
+            let chain_id = ChainId(req.chain_id);
             for tx_bytes in &req.transaction {
                 raw_txs.entry(chain_id).or_default().push(tx_bytes.clone());
             }

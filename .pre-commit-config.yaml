@@ -22,11 +22,11 @@ repos:
         language: system
         entry: cargo deny check
         pass_filenames: false
-        files: ^Cargo\.(toml|lock)$
+        files: ^(Cargo\.(toml|lock)|crates/.+\.toml)$
 
       - id: machete
         name: cargo machete
         language: system
-        entry: cargo machete
+        entry: cargo machete crates/
         pass_filenames: false
-        files: ^Cargo\.toml$
+        files: ^crates/.+\.toml$

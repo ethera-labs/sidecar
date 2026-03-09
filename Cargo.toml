@@ -8,7 +8,6 @@ members = [
     "bin/sidecar",
     "crates/primitives",
     "crates/primitives-traits",
-    "crates/proto",
     "crates/config",
     "crates/net/transport",
     "crates/net/peer",
@@ -23,10 +22,15 @@ members = [
 resolver = "2"
 
 [workspace.dependencies]
+# specs
+compose-spec = { git = "https://github.com/ethera-labs/specs.git", branch = "feat/compose-rs" }
+compose-spec-proto = { git = "https://github.com/ethera-labs/specs.git", branch = "feat/compose-rs" }
+compose-spec-scp = { git = "https://github.com/ethera-labs/specs.git", branch = "feat/compose-rs" }
+compose-spec-sbcp = { git = "https://github.com/ethera-labs/specs.git", branch = "feat/compose-rs" }
+
 # compose
 compose-primitives = { path = "crates/primitives" }
 compose-primitives-traits = { path = "crates/primitives-traits" }
-compose-proto = { path = "crates/proto" }
 compose-config = { path = "crates/config" }
 compose-transport = { path = "crates/net/transport" }
 compose-peer = { path = "crates/net/peer" }
@@ -65,7 +69,7 @@ prost-build = "0.13"
 axum = { version = "0.7", features = ["macros"] }
 tower = "0.5"
 tower-http = { version = "0.6", features = ["cors", "trace"] }
-reqwest = { version = "0.12", features = ["json"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 
 # CLI
 clap = { version = "4", features = ["derive", "env"] }

@@ -19,7 +19,7 @@ use compose_metrics::SidecarMetrics;
 use compose_primitives_traits::{
     CoordinatorError, MailboxSender, PublisherClient, PutInboxBuilder,
 };
-use compose_proto::rollup_v2::MailboxMessage;
+use compose_spec_proto::{MailboxMessage, Payload};
 
 use crate::model::chain_overlay::ChainOverlay;
 use crate::model::pending_xt::PendingXt;
@@ -344,11 +344,9 @@ impl DefaultCoordinator {
             state.pending_submissions.insert(fingerprint.clone(), tx);
         }
 
-        let wire = compose_proto::rollup_v2::WireMessage {
+        let wire = compose_spec_proto::Message {
             sender_id: String::new(),
-            payload: Some(compose_proto::rollup_v2::wire_message::Payload::XtRequest(
-                xt_request,
-            )),
+            payload: Some(Payload::XtRequest(xt_request)),
         };
         let data = wire.encode_to_vec();
 

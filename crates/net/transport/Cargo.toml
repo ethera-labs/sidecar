@@ -10,8 +10,6 @@ license.workspace = true
 workspace = true
 
 [dependencies]
-compose-primitives.workspace = true
-compose-proto.workspace = true
 tokio.workspace = true
 quinn.workspace = true
 rustls.workspace = true
@@ -21,4 +19,3 @@ bytes.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 async-trait.workspace = true
-futures.workspace = true
