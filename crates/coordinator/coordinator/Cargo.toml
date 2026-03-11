@@ -26,3 +26,6 @@ tracing.workspace = true
 hex.workspace = true
 sha2.workspace = true
 prost.workspace = true
+
+[dev-dependencies]
+alloy-rpc-types-eth.workspace = true
