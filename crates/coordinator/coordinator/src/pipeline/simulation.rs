@@ -174,6 +174,21 @@ impl DefaultCoordinator {
                             break;
                         }
 
+                        // A simulation can both produce outbound messages and have unresolved
+                        // dependencies (e.g. a contract that writes then reads the mailbox).
+                        // Dispatch those messages now so peer sidecars can fulfill their own
+                        // dependencies while we wait on ours.
+                        if !result.outbound_messages.is_empty() {
+                            if let Err(e) = self
+                                .dispatch_outbound_mailbox(instance_id, &result.outbound_messages)
+                                .await
+                            {
+                                error!(instance_id, error = %e, "Failed to dispatch mailbox messages");
+                                let _ = self.send_vote(instance_id, false).await;
+                                return;
+                            }
+                        }
+
                         info!(
                             instance_id,
                             tx_index,
