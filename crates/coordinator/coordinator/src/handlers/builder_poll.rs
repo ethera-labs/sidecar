@@ -23,6 +23,18 @@ impl DefaultCoordinator {
         &self,
         req: &BuilderPollRequest,
     ) -> Result<BuilderPollResponse, CoordinatorError> {
+        // Remove XTs the builder confirmed it executed. This is the "confirm
+        // back" step of the pull protocol: the builder sends instance IDs it
+        // successfully included, and the sidecar stops tracking those XTs.
+        if !req.confirmed_instance_ids.is_empty() {
+            let mut state = self.state.write().await;
+            for id in &req.confirmed_instance_ids {
+                if state.pending.remove(id.as_str()).is_some() {
+                    info!(instance_id = %id, "XT confirmed included by builder, removed from pending");
+                }
+            }
+        }
+
         if req.flashblock_index == 0 {
             return Ok(BuilderPollResponse {
                 hold: false,
@@ -372,6 +384,7 @@ mod tests {
             timestamp: 0,
             gas_limit: 30_000_000,
             state_overrides: None,
+            confirmed_instance_ids: Vec::new(),
         }
     }
 
@@ -388,6 +401,7 @@ mod tests {
             timestamp: 0,
             gas_limit: 30_000_000,
             state_overrides: Some(overrides),
+            confirmed_instance_ids: Vec::new(),
         }
     }
 
@@ -595,6 +609,38 @@ mod tests {
         assert!(
             resp.transactions.is_empty(),
             "should skip already-included XT"
+        );
+    }
+
+    #[tokio::test]
+    async fn builder_poll_removes_confirmed_xts() {
+        let coordinator = DefaultCoordinator::new(CHAIN, None, None, None, None, None, None, 1000);
+        let signer = PrivateKeySigner::random();
+        let raw = make_signed_tx(&signer, 0).await;
+
+        {
+            let mut state = coordinator.state.write().await;
+            let mut xt = PendingXt::new("xt-1".to_string(), b"xt-1".to_vec());
+            xt.raw_txs.insert(CHAIN, vec![raw]);
+            xt.decision = Some(true);
+            xt.decided_at = Some(std::time::Instant::now());
+            state.pending.insert(xt.id.clone(), xt);
+        }
+
+        // Builder confirms XT was executed — sidecar must remove it and stop delivering.
+        let mut req = make_poll_req(CHAIN, 1);
+        req.confirmed_instance_ids = vec!["xt-1".to_string()];
+        let resp = coordinator.handle_builder_poll(&req).await.unwrap();
+        assert!(!resp.hold);
+        assert!(
+            resp.transactions.is_empty(),
+            "confirmed XT must not be redelivered"
+        );
+
+        let state = coordinator.state.read().await;
+        assert!(
+            !state.pending.contains_key("xt-1"),
+            "confirmed XT must be removed from pending"
         );
     }
 }
