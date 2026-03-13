@@ -220,6 +220,19 @@ impl DefaultCoordinator {
         }
         // Drop submission channels where the caller already timed out.
         state.pending_submissions.retain(|_, tx| !tx.is_closed());
+        // Remove orphan mailbox_buffer entries whose XTs will never arrive.
+        let orphan_keys: Vec<Vec<u8>> = state
+            .mailbox_buffer
+            .keys()
+            .filter(|key| !state.mailbox_index.contains_key(key.as_slice()))
+            .cloned()
+            .collect();
+        for key in orphan_keys {
+            state.mailbox_buffer.remove(&key);
+        }
+        if let Some(m) = &self.metrics {
+            m.mailbox_buffer_size.set(state.mailbox_buffer.len() as i64);
+        }
     }
 
     async fn cleanup_loop(&self) {

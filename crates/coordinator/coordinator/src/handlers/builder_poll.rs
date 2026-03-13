@@ -35,6 +35,9 @@ impl DefaultCoordinator {
             }
         }
 
+        // The first flashblock (index 0) contains only sequencer-forced
+        // transactions. Sidecar XTs are only delivered in subsequent
+        // flashblocks to ensure the builder has executed sequencer txs first.
         if req.flashblock_index == 0 {
             return Ok(BuilderPollResponse {
                 hold: false,
@@ -357,7 +360,9 @@ impl DefaultCoordinator {
         let mut next_nonce = if let Some(base) = base_nonce {
             self.nonce_manager.resync(|| async { Ok(base) }).await?;
             self.nonce_manager
-                .reserve(total_deps, || async { panic!("resync already set base") })
+                .reserve(total_deps, || async {
+                    unreachable!("resync already set base nonce")
+                })
                 .await?
         } else {
             let nonce_builder = builder.clone();

@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use compose_primitives::{ChainId, InstanceId, PeriodId, SequenceNumber};
 use compose_spec_proto::StartInstance;
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info, warn};
 
 use crate::coordinator::DefaultCoordinator;
 use crate::model::pending_xt::PendingXt;
@@ -71,9 +71,16 @@ impl DefaultCoordinator {
         }
 
         let msg_period = PeriodId(msg.period_id);
-        if msg_period != state.current_period_id {
+        let current_period = state.current_period_id;
+        if msg_period < current_period {
             drop(state);
-            warn!(instance_id = %instance_id, "Period mismatch, rejecting");
+            warn!(instance_id = %instance_id, msg_period = msg_period.0, current_period = current_period.0, "Stale period, rejecting");
+            self.reject_start_instance(&instance_id, msg).await;
+            return Ok(());
+        }
+        if msg_period > current_period {
+            drop(state);
+            warn!(instance_id = %instance_id, msg_period = msg_period.0, current_period = current_period.0, "Future period (last block still building), rejecting");
             self.reject_start_instance(&instance_id, msg).await;
             return Ok(());
         }
@@ -165,7 +172,19 @@ impl DefaultCoordinator {
             sequence = msg.sequence_number,
             "Rejecting StartInstance"
         );
-        // Send an abort vote for the rejected instance.
-        let _ = self.send_vote(instance_id, false).await;
+        if let Some(m) = &self.metrics {
+            m.xt_rejected_total.inc();
+        }
+
+        // Send abort vote directly to the publisher, bypassing send_vote()
+        // which requires the XT to exist in pending state. In standalone mode
+        // this is a no-op — there's no XT to track and no publisher to notify.
+        if let Some(publisher) = &self.publisher {
+            if publisher.is_connected() {
+                if let Err(e) = publisher.send_vote(&msg.instance_id, false).await {
+                    error!(instance_id, error = %e, "Failed to send reject vote to publisher");
+                }
+            }
+        }
     }
 }

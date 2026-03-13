@@ -82,7 +82,13 @@ impl DefaultCoordinator {
                         return;
                     }
                 },
-                None => return,
+                None => {
+                    warn!(
+                        instance_id,
+                        "XT disappeared during simulation (likely rollback)"
+                    );
+                    return;
+                }
             }
         };
 
@@ -109,7 +115,13 @@ impl DefaultCoordinator {
             let state = self.state.read().await;
             match state.pending.get(instance_id) {
                 Some(xt) => (xt.outbound_messages.clone(), xt.fulfilled_deps.clone()),
-                None => return,
+                None => {
+                    warn!(
+                        instance_id,
+                        "XT disappeared during simulation setup (likely rollback)"
+                    );
+                    return;
+                }
             }
         };
 
@@ -217,12 +229,21 @@ impl DefaultCoordinator {
                                     already_sent_msgs = xt.outbound_messages.clone();
                                     fulfilled_deps = xt.fulfilled_deps.clone();
                                 }
-                                None => return,
+                                None => {
+                                    warn!(
+                                        instance_id,
+                                        "XT disappeared during dep-wait (likely rollback)"
+                                    );
+                                    return;
+                                }
                             }
                         }
                     }
                     Err(e) => {
                         error!(instance_id, error = %e, "Simulation failed");
+                        if let Some(m) = &self.metrics {
+                            m.simulation_error_total.inc();
+                        }
                         let _ = self.send_vote(instance_id, false).await;
                         return;
                     }
