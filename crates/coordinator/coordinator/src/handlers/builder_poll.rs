@@ -260,13 +260,36 @@ impl DefaultCoordinator {
                 });
             }
 
-            let transactions = build_transaction_payloads(&deliverables);
+            let raw_xt_tx_count = deliverables.iter().map(|d| d.raw_txs.len()).sum::<usize>();
+            let put_inbox_tx_count = deliverables
+                .iter()
+                .map(|d| d.put_inbox_txs.len())
+                .sum::<usize>();
+            let dependency_count = deliverables.iter().map(|d| d.deps.len()).sum::<usize>();
+            let deliverable_breakdown = deliverables
+                .iter()
+                .map(|d| {
+                    format!(
+                        "{}(raw_txs={}, put_inbox_txs={}, deps={})",
+                        d.id,
+                        d.raw_txs.len(),
+                        d.put_inbox_txs.len(),
+                        d.deps.len()
+                    )
+                })
+                .collect::<Vec<_>>();
+            let builder_transactions = build_transaction_payloads(&deliverables);
 
             info!(
                 chain_id = %req.chain_id,
-                tx_count = transactions.len(),
+                instance_count = deliverables.len(),
+                raw_xt_tx_count,
+                put_inbox_tx_count,
+                dependency_count,
+                builder_tx_count = builder_transactions.len(),
                 deliverable_ids = ?deliverables.iter().map(|d| d.id.as_str()).collect::<Vec<_>>(),
-                "Delivering committed transactions to builder"
+                deliverable_breakdown = ?deliverable_breakdown,
+                "Delivering committed XT transactions to builder"
             );
 
             if let Some(m) = &self.metrics {
@@ -274,7 +297,7 @@ impl DefaultCoordinator {
             }
             return Ok(BuilderPollResponse {
                 hold: false,
-                transactions,
+                transactions: builder_transactions,
                 poll_after_ms: None,
                 max_hold_ms: None,
             });
