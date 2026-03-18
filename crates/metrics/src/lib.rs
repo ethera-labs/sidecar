@@ -32,6 +32,12 @@ pub struct SidecarMetrics {
     pub circ_messages_sent_total: Counter<u64>,
     /// Vote send failures (publisher unreachable or peer send error).
     pub vote_send_failed_total: Counter<u64>,
+    /// RPC simulation errors (distinct from simulation returning failure).
+    pub simulation_error_total: Counter<u64>,
+    /// `StartInstance` messages rejected (stale period, active instance, etc.).
+    pub xt_rejected_total: Counter<u64>,
+    /// Current number of orphan mailbox buffer entries.
+    pub mailbox_buffer_size: Gauge,
 }
 
 impl SidecarMetrics {
@@ -123,6 +129,27 @@ impl SidecarMetrics {
             vote_send_failed_total.clone(),
         );
 
+        let simulation_error_total = Counter::default();
+        registry.register(
+            "sidecar_simulation_error",
+            "RPC simulation errors (distinct from simulation returning failure)",
+            simulation_error_total.clone(),
+        );
+
+        let xt_rejected_total = Counter::default();
+        registry.register(
+            "sidecar_xt_rejected",
+            "StartInstance messages rejected (stale period, active instance, etc.)",
+            xt_rejected_total.clone(),
+        );
+
+        let mailbox_buffer_size = Gauge::default();
+        registry.register(
+            "sidecar_mailbox_buffer_size",
+            "Current number of orphan mailbox buffer entries",
+            mailbox_buffer_size.clone(),
+        );
+
         Self {
             xt_received_total,
             xt_decided_commit_total,
@@ -136,6 +163,9 @@ impl SidecarMetrics {
             circ_messages_received_total,
             circ_messages_sent_total,
             vote_send_failed_total,
+            simulation_error_total,
+            xt_rejected_total,
+            mailbox_buffer_size,
         }
     }
 }

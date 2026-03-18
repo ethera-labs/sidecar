@@ -13,7 +13,6 @@ name = "sidecar"
 path = "src/main.rs"
 
 [dependencies]
-compose-primitives.workspace = true
 compose-config.workspace = true
 compose-transport.workspace = true
 compose-peer.workspace = true

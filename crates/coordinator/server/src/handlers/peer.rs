@@ -4,7 +4,7 @@ use axum::extract::State;
 use axum::Json;
 use compose_peer::types::{VoteRequest, XtForwardRequest};
 use compose_primitives::{ChainId, SequenceNumber};
-use compose_proto::rollup_v2::MailboxMessage;
+use compose_proto::MailboxMessage;
 use prost::Message;
 
 use crate::error::ServerError;

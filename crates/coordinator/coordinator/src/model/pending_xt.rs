@@ -7,7 +7,7 @@ use compose_primitives::{
     ChainId, CrossRollupDependency, CrossRollupMessage, InstanceId, PeriodId, SequenceNumber,
     StateOverride,
 };
-use compose_proto::rollup_v2::MailboxMessage;
+use compose_proto::MailboxMessage;
 
 /// A cross-chain transaction in flight, tracking its full lifecycle from
 /// submission through simulation, voting, and decision.
@@ -67,9 +67,6 @@ pub struct PendingXt {
     pub fulfilled_dep_keys: HashSet<String>,
     /// Outbound messages from simulation.
     pub outbound_messages: Vec<CrossRollupMessage>,
-
-    /// Chains to which committed transactions have been delivered.
-    pub delivered_chains: HashSet<ChainId>,
 }
 
 impl PendingXt {
@@ -99,7 +96,6 @@ impl PendingXt {
             fulfilled_deps: Vec::new(),
             fulfilled_dep_keys: HashSet::new(),
             outbound_messages: Vec::new(),
-            delivered_chains: HashSet::new(),
         }
     }
 

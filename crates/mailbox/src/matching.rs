@@ -1,7 +1,7 @@
 //! Matching helpers between dependencies and mailbox messages.
 
 use compose_primitives::{ChainId, CrossRollupDependency};
-use compose_proto::rollup_v2::MailboxMessage;
+use compose_proto::MailboxMessage;
 
 /// Check whether a mailbox message satisfies a cross-rollup dependency.
 ///

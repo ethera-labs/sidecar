@@ -1,6 +1,6 @@
 //! Rollback handling for aborting undecided instances.
 
-use compose_primitives::PeriodId;
+use compose_primitives::{PeriodId, SuperblockNumber};
 use tracing::warn;
 
 use crate::coordinator::DefaultCoordinator;
@@ -26,6 +26,8 @@ impl DefaultCoordinator {
         }
 
         state.period_initialized = false;
+        state.current_period_id = period_id;
+        state.current_superblock_num = SuperblockNumber(last_finalized_superblock_num + 1);
         state.last_sequence_num = Default::default();
         state.last_known_blocks.clear();
         state.chain_overlay.clear();
@@ -56,5 +58,36 @@ impl DefaultCoordinator {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use compose_primitives::{ChainId, PeriodId, SuperblockNumber};
+
+    use crate::coordinator::DefaultCoordinator;
+
+    #[tokio::test]
+    async fn handle_rollback_updates_period_and_superblock() {
+        let coordinator =
+            DefaultCoordinator::new(ChainId(77777), None, None, None, None, None, None, 1000);
+
+        // Set initial state.
+        {
+            let mut state = coordinator.state.write().await;
+            state.current_period_id = PeriodId(10);
+            state.current_superblock_num = SuperblockNumber(100);
+            state.period_initialized = true;
+        }
+
+        coordinator
+            .handle_rollback(PeriodId(8), 50, b"hash")
+            .await
+            .unwrap();
+
+        let state = coordinator.state.read().await;
+        assert_eq!(state.current_period_id, PeriodId(8));
+        assert_eq!(state.current_superblock_num, SuperblockNumber(51));
+        assert!(!state.period_initialized);
     }
 }

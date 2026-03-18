@@ -1,6 +1,11 @@
 //! Helpers for turning committed XTs into builder payloads.
 
-use compose_primitives::{ChainId, CrossRollupDependency, InstanceId, TransactionPayload};
+use alloy::consensus::transaction::SignerRecoverable;
+use alloy::consensus::{Transaction, TxEnvelope};
+use alloy::primitives::Address;
+use compose_primitives::{
+    ChainId, CrossRollupDependency, InstanceId, StateOverride, TransactionPayload,
+};
 
 /// A committed XT ready to be delivered to the builder.
 #[derive(Debug)]
@@ -20,6 +25,18 @@ pub fn deps_for_chain(
         .filter(|dep| dep.dest_chain_id == chain_id)
         .cloned()
         .collect()
+}
+
+/// Decode the sender address and nonce from a raw RLP-encoded signed transaction.
+pub fn decode_sender_nonce(raw_tx: &[u8]) -> Option<(Address, u64)> {
+    let signed: TxEnvelope = alloy::rlp::Decodable::decode(&mut &raw_tx[..]).ok()?;
+    let from = signed.recover_signer().ok()?;
+    Some((from, signed.nonce()))
+}
+
+/// Look up an account's nonce from the builder's state overrides.
+pub fn sender_nonce_from_overrides(overrides: &StateOverride, sender: Address) -> Option<u64> {
+    overrides.get(&sender).and_then(|acct| acct.nonce)
 }
 
 /// Build transaction payloads for the builder from deliverable XTs.
