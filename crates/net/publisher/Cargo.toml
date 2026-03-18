@@ -12,7 +12,7 @@ workspace = true
 [dependencies]
 compose-primitives.workspace = true
 compose-primitives-traits.workspace = true
-compose-proto.workspace = true
+compose-spec-proto.workspace = true
 compose-transport.workspace = true
 bytes.workspace = true
 prost.workspace = true

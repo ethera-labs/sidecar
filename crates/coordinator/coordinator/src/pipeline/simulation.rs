@@ -5,7 +5,7 @@ use std::time::{Duration, Instant as StdInstant};
 use compose_mailbox::matching::{contains_message, dep_key, matches_dependency};
 use compose_mailbox::overrides::merge_overrides;
 use compose_primitives::{ChainId, CrossRollupDependency, CrossRollupMessage, StateOverride};
-use compose_proto::MailboxMessage;
+use compose_spec_proto::MailboxMessage;
 use tokio::time::{sleep_until, Instant};
 use tracing::{debug, error, info, warn};
 

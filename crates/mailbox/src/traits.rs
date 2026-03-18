@@ -2,7 +2,7 @@
 
 use async_trait::async_trait;
 use compose_primitives::ChainId;
-use compose_proto::MailboxMessage;
+use compose_spec_proto::MailboxMessage;
 
 use crate::error::MailboxError;
 

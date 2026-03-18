@@ -1,6 +1,6 @@
 //! Inbound mailbox message handling and state updates.
 
-use compose_proto::MailboxMessage;
+use compose_spec_proto::MailboxMessage;
 use tracing::{debug, warn};
 
 use crate::coordinator::DefaultCoordinator;
@@ -67,7 +67,7 @@ impl DefaultCoordinator {
 #[cfg(test)]
 mod tests {
     use compose_primitives::ChainId;
-    use compose_proto::MailboxMessage;
+    use compose_spec_proto::MailboxMessage;
 
     use crate::coordinator::DefaultCoordinator;
     use crate::model::pending_xt::PendingXt;

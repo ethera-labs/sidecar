@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 use compose_primitives::ChainId;
-use compose_proto::{TransactionRequest, XtRequest};
+use compose_spec_proto::{TransactionRequest, XtRequest};
 use prost::Message;
 use sha2::{Digest, Sha256};
 

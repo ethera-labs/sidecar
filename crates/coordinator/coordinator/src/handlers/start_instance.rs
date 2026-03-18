@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 use compose_primitives::{ChainId, InstanceId, PeriodId, SequenceNumber};
-use compose_proto::StartInstance;
+use compose_spec_proto::StartInstance;
 use tracing::{debug, error, info, warn};
 
 use crate::coordinator::DefaultCoordinator;

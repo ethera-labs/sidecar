@@ -12,6 +12,6 @@ workspace = true
 [dependencies]
 alloy.workspace = true
 compose-primitives.workspace = true
-compose-proto.workspace = true
+compose-spec-proto.workspace = true
 async-trait.workspace = true
 thiserror.workspace = true
