@@ -43,8 +43,12 @@ impl QuicClient {
         transport_config.keep_alive_interval(keep_alive);
         quinn_config.transport_config(Arc::new(transport_config));
 
-        let mut endpoint =
-            Endpoint::client("0.0.0.0:0".parse().unwrap()).map_err(TransportError::Io)?;
+        let socket = crate::socket::build_udp_socket("0.0.0.0:0".parse().unwrap())
+            .map_err(TransportError::Io)?;
+        let runtime = quinn::default_runtime()
+            .ok_or_else(|| TransportError::Other("no async runtime available".into()))?;
+        let mut endpoint = Endpoint::new(quinn::EndpointConfig::default(), None, socket, runtime)
+            .map_err(TransportError::Io)?;
         endpoint.set_default_client_config(quinn_config);
 
         let codec = LengthPrefixCodec::new(config.max_message_size);

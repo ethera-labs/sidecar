@@ -90,6 +90,7 @@ hex = "0.4"
 # Misc
 bytes = "1.0"
 prometheus-client = "0.22"
+socket2 = "0.5"
 
 [workspace.lints.rust]
 missing_debug_implementations = "warn"

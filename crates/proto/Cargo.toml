@@ -12,7 +12,6 @@ workspace = true
 [dependencies]
 compose-primitives.workspace = true
 prost.workspace = true
-bytes.workspace = true
 hex.workspace = true
 
 [build-dependencies]

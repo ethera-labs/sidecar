@@ -15,7 +15,7 @@ use compose_mailbox::overrides::{build_mailbox_state_overrides, merge_overrides}
 use compose_primitives::{ChainId, CrossRollupDependency, CrossRollupMessage, SimulationResult};
 use reqwest::Client;
 use serde_json::{json, Value};
-use tracing::debug;
+use tracing::{debug, trace};
 
 use crate::error::SimulationError;
 use crate::traits::Simulator;
@@ -120,7 +120,7 @@ impl RpcSimulator {
             .await
             .map_err(|e| SimulationError::Rpc(e.to_string()))?;
 
-        debug!(chain_id = %chain_id, result = %serde_json::to_string(&result).unwrap_or_default(), "debug_traceCall response");
+        trace!(chain_id = %chain_id, result = %serde_json::to_string(&result).unwrap_or_default(), "debug_traceCall response");
 
         if let Some(err) = result.get("error") {
             return Err(SimulationError::Rpc(err.to_string()));

@@ -40,13 +40,21 @@ impl QuicServer {
             .map_err(|e| TransportError::Tls(e.to_string()))?;
         let server_config = quinn::ServerConfig::with_crypto(std::sync::Arc::new(quic_config));
 
-        let addr = self
+        let addr: std::net::SocketAddr = self
             .config
             .listen_addr
             .parse()
             .map_err(|e: std::net::AddrParseError| TransportError::Other(e.to_string()))?;
 
-        let endpoint = Endpoint::server(server_config, addr)?;
+        let socket = crate::socket::build_udp_socket(addr)?;
+        let runtime = quinn::default_runtime()
+            .ok_or_else(|| TransportError::Other("no async runtime available".into()))?;
+        let endpoint = Endpoint::new(
+            quinn::EndpointConfig::default(),
+            Some(server_config),
+            socket,
+            runtime,
+        )?;
         info!(addr = %self.config.listen_addr, "QUIC server listening");
 
         self.endpoint = Some(endpoint.clone());
