@@ -2,7 +2,7 @@
 
 use async_trait::async_trait;
 use compose_primitives::ChainId;
-use compose_proto::rollup_v2::MailboxMessage;
+use compose_proto::MailboxMessage;
 
 use crate::error::CoordinatorError;
 

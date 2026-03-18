@@ -272,6 +272,11 @@ pub struct BuilderPollRequest {
     pub timestamp: u64,
     pub gas_limit: u64,
     pub state_overrides: Option<StateOverride>,
+    /// Instance IDs of XTs the builder successfully executed in the previous
+    /// flashblock. The sidecar removes these from its pending set immediately,
+    /// implementing the "confirm back" step of the pull protocol.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub confirmed_instance_ids: Vec<String>,
 }
 
 /// Builder poll response to op-rbuilder.

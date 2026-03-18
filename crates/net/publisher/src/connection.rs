@@ -4,8 +4,7 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use compose_primitives::ChainId;
 use compose_primitives_traits::{CoordinatorError, PublisherClient};
-use compose_proto::conversions::chain_id_to_proto;
-use compose_proto::rollup_v2::{wire_message, Vote, WireMessage};
+use compose_proto::{wire_message::Payload, Vote};
 use compose_transport::traits::Transport;
 use prost::Message;
 
@@ -63,11 +62,11 @@ impl PublisherClient for PublisherConnection {
     }
 
     async fn send_vote(&self, instance_id: &[u8], vote: bool) -> Result<(), CoordinatorError> {
-        let msg = WireMessage {
+        let msg = compose_proto::WireMessage {
             sender_id: String::new(),
-            payload: Some(wire_message::Payload::Vote(Vote {
+            payload: Some(Payload::Vote(Vote {
                 instance_id: instance_id.to_vec(),
-                chain_id: chain_id_to_proto(self.chain_id),
+                chain_id: self.chain_id.0,
                 vote,
             })),
         };

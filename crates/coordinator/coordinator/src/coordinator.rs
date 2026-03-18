@@ -19,7 +19,7 @@ use compose_metrics::SidecarMetrics;
 use compose_primitives_traits::{
     CoordinatorError, MailboxSender, PublisherClient, PutInboxBuilder,
 };
-use compose_proto::rollup_v2::MailboxMessage;
+use compose_proto::{wire_message::Payload, MailboxMessage};
 
 use crate::model::chain_overlay::ChainOverlay;
 use crate::model::pending_xt::PendingXt;
@@ -220,6 +220,19 @@ impl DefaultCoordinator {
         }
         // Drop submission channels where the caller already timed out.
         state.pending_submissions.retain(|_, tx| !tx.is_closed());
+        // Remove orphan mailbox_buffer entries whose XTs will never arrive.
+        let orphan_keys: Vec<Vec<u8>> = state
+            .mailbox_buffer
+            .keys()
+            .filter(|key| !state.mailbox_index.contains_key(key.as_slice()))
+            .cloned()
+            .collect();
+        for key in orphan_keys {
+            state.mailbox_buffer.remove(&key);
+        }
+        if let Some(m) = &self.metrics {
+            m.mailbox_buffer_size.set(state.mailbox_buffer.len() as i64);
+        }
     }
 
     async fn cleanup_loop(&self) {
@@ -344,11 +357,9 @@ impl DefaultCoordinator {
             state.pending_submissions.insert(fingerprint.clone(), tx);
         }
 
-        let wire = compose_proto::rollup_v2::WireMessage {
+        let wire = compose_proto::WireMessage {
             sender_id: String::new(),
-            payload: Some(compose_proto::rollup_v2::wire_message::Payload::XtRequest(
-                xt_request,
-            )),
+            payload: Some(Payload::XtRequest(xt_request)),
         };
         let data = wire.encode_to_vec();
 
