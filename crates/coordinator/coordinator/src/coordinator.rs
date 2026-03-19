@@ -25,6 +25,7 @@ use crate::model::chain_overlay::ChainOverlay;
 use crate::model::pending_xt::PendingXt;
 use crate::model::xt_status::{determine_xt_status, XtStatusResponse};
 use crate::nonce_manager::DeferredNonceManager;
+use crate::pipeline::delivery::build_sender_nonce_cache;
 use crate::pipeline::submission::{build_xt_request, xt_request_fingerprint};
 
 /// Shared coordinator state protected by a `RwLock`.
@@ -434,6 +435,7 @@ impl DefaultCoordinator {
             let mut xt = PendingXt::new(id.to_string(), id.as_bytes().to_vec());
             xt.origin_chain = Some(self.chain_id);
             xt.origin_seq = seq;
+            xt.sender_nonces = build_sender_nonce_cache(&txs);
             xt.raw_txs = txs;
             // Pre-lock so builder_poll won't spawn a duplicate simulation.
             xt.locked_chains.insert(self.chain_id);

@@ -221,14 +221,19 @@ impl Simulator for RpcSimulator {
         _already_sent_msgs: &[CrossRollupMessage],
         fulfilled_deps: &[CrossRollupDependency],
     ) -> Result<SimulationResult, SimulationError> {
-        let mut merged = state_overrides.clone();
+        // No mailbox injection needed — skip the clone and delegate directly.
+        let Some(mailbox_addr) = self.mailbox_address else {
+            return self.simulate(chain_id, tx, state_overrides).await;
+        };
+        if fulfilled_deps.is_empty() {
+            return self.simulate(chain_id, tx, state_overrides).await;
+        }
 
-        if let Some(mailbox_addr) = self.mailbox_address {
-            if let Some(mailbox_overrides) =
-                build_mailbox_state_overrides(chain_id, mailbox_addr, fulfilled_deps)
-            {
-                merge_overrides(&mut merged, &mailbox_overrides);
-            }
+        let mut merged = state_overrides.clone();
+        if let Some(mailbox_overrides) =
+            build_mailbox_state_overrides(chain_id, mailbox_addr, fulfilled_deps)
+        {
+            merge_overrides(&mut merged, &mailbox_overrides);
         }
 
         self.simulate(chain_id, tx, &merged).await

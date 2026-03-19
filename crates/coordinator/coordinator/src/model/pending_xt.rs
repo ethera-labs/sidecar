@@ -3,6 +3,7 @@
 use std::collections::{HashMap, HashSet};
 use std::time::Instant;
 
+use alloy::primitives::Address;
 use compose_primitives::{
     ChainId, CrossRollupDependency, CrossRollupMessage, InstanceId, PeriodId, SequenceNumber,
     StateOverride,
@@ -67,6 +68,11 @@ pub struct PendingXt {
     pub fulfilled_dep_keys: HashSet<String>,
     /// Outbound messages from simulation.
     pub outbound_messages: Vec<CrossRollupMessage>,
+    /// Cached sender address and nonce per chain, derived from the first raw tx.
+    ///
+    /// Populated at registration to avoid repeated ECDSA recovery on every
+    /// builder poll. Builder poll falls back to on-demand recovery if absent.
+    pub sender_nonces: HashMap<ChainId, (Address, u64)>,
 }
 
 impl PendingXt {
@@ -96,6 +102,7 @@ impl PendingXt {
             fulfilled_deps: Vec::new(),
             fulfilled_dep_keys: HashSet::new(),
             outbound_messages: Vec::new(),
+            sender_nonces: HashMap::new(),
         }
     }
 

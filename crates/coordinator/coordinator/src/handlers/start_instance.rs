@@ -8,6 +8,7 @@ use tracing::{debug, error, info, warn};
 
 use crate::coordinator::DefaultCoordinator;
 use crate::model::pending_xt::PendingXt;
+use crate::pipeline::delivery::build_sender_nonce_cache;
 use crate::pipeline::submission::xt_request_fingerprint;
 use compose_primitives_traits::CoordinatorError;
 
@@ -42,6 +43,8 @@ impl DefaultCoordinator {
                 raw_txs.entry(chain_id).or_default().push(tx_bytes.clone());
             }
         }
+
+        let sender_nonces = build_sender_nonce_cache(&raw_txs);
 
         let mut state = self.state.write().await;
 
@@ -107,6 +110,7 @@ impl DefaultCoordinator {
         xt.period_id = msg_period;
         xt.sequence_num = msg_seq;
         xt.raw_txs = raw_txs;
+        xt.sender_nonces = sender_nonces;
 
         // Pre-lock so builder_poll won't spawn a duplicate simulation.
         if includes_local {

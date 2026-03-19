@@ -1,5 +1,7 @@
 //! Helpers for turning committed XTs into builder payloads.
 
+use std::collections::HashMap;
+
 use alloy::consensus::transaction::SignerRecoverable;
 use alloy::consensus::{Transaction, TxEnvelope};
 use alloy::primitives::Address;
@@ -32,6 +34,25 @@ pub fn decode_sender_nonce(raw_tx: &[u8]) -> Option<(Address, u64)> {
     let signed: TxEnvelope = alloy::rlp::Decodable::decode(&mut &raw_tx[..]).ok()?;
     let from = signed.recover_signer().ok()?;
     Some((from, signed.nonce()))
+}
+
+/// Build a sender/nonce cache from each chain's first raw transaction.
+///
+/// Performs ECDSA recovery once at XT registration so the builder poll path
+/// can skip repeated per-call recovery. Chains whose first transaction cannot
+/// be decoded are silently omitted; the builder poll falls back to
+/// on-demand decoding for those entries.
+pub fn build_sender_nonce_cache(
+    txs: &HashMap<ChainId, Vec<Vec<u8>>>,
+) -> HashMap<ChainId, (Address, u64)> {
+    txs.iter()
+        .filter_map(|(&chain_id, chain_txs)| {
+            chain_txs
+                .first()
+                .and_then(|tx| decode_sender_nonce(tx))
+                .map(|sn| (chain_id, sn))
+        })
+        .collect()
 }
 
 /// Look up an account's nonce from the builder's state overrides.

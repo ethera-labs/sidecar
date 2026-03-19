@@ -208,7 +208,12 @@ impl DefaultCoordinator {
                     continue;
                 }
 
-                let Some((sender, nonce)) = decode_sender_nonce(&raw_txs[0]) else {
+                let Some((sender, nonce)) = xt
+                    .sender_nonces
+                    .get(&req.chain_id)
+                    .copied()
+                    .or_else(|| decode_sender_nonce(&raw_txs[0]))
+                else {
                     warn!(xt_id = %id, "Failed to decode sender/nonce from raw tx, skipping");
                     continue;
                 };
@@ -269,18 +274,6 @@ impl DefaultCoordinator {
                 .map(|d| d.put_inbox_txs.len())
                 .sum::<usize>();
             let dependency_count = deliverables.iter().map(|d| d.deps.len()).sum::<usize>();
-            let deliverable_breakdown = deliverables
-                .iter()
-                .map(|d| {
-                    format!(
-                        "{}(raw_txs={}, put_inbox_txs={}, deps={})",
-                        d.id,
-                        d.raw_txs.len(),
-                        d.put_inbox_txs.len(),
-                        d.deps.len()
-                    )
-                })
-                .collect::<Vec<_>>();
             let builder_transactions = build_transaction_payloads(&deliverables);
 
             info!(
@@ -290,10 +283,19 @@ impl DefaultCoordinator {
                 put_inbox_tx_count,
                 dependency_count,
                 builder_tx_count = builder_transactions.len(),
-                deliverable_ids = ?deliverables.iter().map(|d| d.id.as_str()).collect::<Vec<_>>(),
-                deliverable_breakdown = ?deliverable_breakdown,
                 "Delivering committed XT transactions to builder"
             );
+            if tracing::enabled!(tracing::Level::DEBUG) {
+                for d in &deliverables {
+                    debug!(
+                        id = %d.id,
+                        raw_txs = d.raw_txs.len(),
+                        put_inbox_txs = d.put_inbox_txs.len(),
+                        deps = d.deps.len(),
+                        "XT delivery detail"
+                    );
+                }
+            }
 
             if let Some(m) = &self.metrics {
                 m.builder_poll_deliver_total.inc();
