@@ -218,7 +218,6 @@ impl Simulator for RpcSimulator {
         chain_id: ChainId,
         tx: &[u8],
         state_overrides: &StateOverride,
-        _already_sent_msgs: &[CrossRollupMessage],
         fulfilled_deps: &[CrossRollupDependency],
     ) -> Result<SimulationResult, SimulationError> {
         // No mailbox injection needed — skip the clone and delegate directly.

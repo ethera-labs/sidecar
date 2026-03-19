@@ -16,6 +16,8 @@ pub struct SidecarMetrics {
     pub xt_decided_abort_total: Counter<u64>,
     /// Wall-clock time of each simulation call, in seconds.
     pub simulation_duration_seconds: Histogram,
+    /// Time spent waiting for mailbox dependencies before retrying simulation.
+    pub mailbox_wait_duration_seconds: Histogram,
     /// End-to-end XT latency from submission to decision, in seconds.
     pub xt_decision_latency_seconds: Histogram,
     /// Current number of undecided (in-flight) XTs.
@@ -34,6 +36,8 @@ pub struct SidecarMetrics {
     pub vote_send_failed_total: Counter<u64>,
     /// RPC simulation errors (distinct from simulation returning failure).
     pub simulation_error_total: Counter<u64>,
+    /// Mailbox waits that hit the CIRC timeout before any dependency arrived.
+    pub mailbox_wait_timeout_total: Counter<u64>,
     /// `StartInstance` messages rejected (stale period, active instance, etc.).
     pub xt_rejected_total: Counter<u64>,
     /// Current number of orphan mailbox buffer entries.
@@ -70,6 +74,14 @@ impl SidecarMetrics {
             "sidecar_simulation_duration_seconds",
             "Wall-clock time of each EVM simulation call",
             simulation_duration_seconds.clone(),
+        );
+
+        let mailbox_wait_duration_seconds =
+            Histogram::new([0.001, 0.005, 0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0].into_iter());
+        registry.register(
+            "sidecar_mailbox_wait_duration_seconds",
+            "Time spent waiting for mailbox dependencies before retrying simulation",
+            mailbox_wait_duration_seconds.clone(),
         );
 
         let xt_decision_latency_seconds =
@@ -136,6 +148,13 @@ impl SidecarMetrics {
             simulation_error_total.clone(),
         );
 
+        let mailbox_wait_timeout_total = Counter::default();
+        registry.register(
+            "sidecar_mailbox_wait_timeout",
+            "Mailbox waits that reached the CIRC timeout before any dependency arrived",
+            mailbox_wait_timeout_total.clone(),
+        );
+
         let xt_rejected_total = Counter::default();
         registry.register(
             "sidecar_xt_rejected",
@@ -155,6 +174,7 @@ impl SidecarMetrics {
             xt_decided_commit_total,
             xt_decided_abort_total,
             simulation_duration_seconds,
+            mailbox_wait_duration_seconds,
             xt_decision_latency_seconds,
             xt_pending_count,
             builder_poll_hold_total,
@@ -164,6 +184,7 @@ impl SidecarMetrics {
             circ_messages_sent_total,
             vote_send_failed_total,
             simulation_error_total,
+            mailbox_wait_timeout_total,
             xt_rejected_total,
             mailbox_buffer_size,
         }

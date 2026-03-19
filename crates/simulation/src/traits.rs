@@ -1,9 +1,7 @@
 //! Simulation trait definitions used by the coordinator.
 
 use async_trait::async_trait;
-use compose_primitives::{
-    ChainId, CrossRollupDependency, CrossRollupMessage, SimulationResult, StateOverride,
-};
+use compose_primitives::{ChainId, CrossRollupDependency, SimulationResult, StateOverride};
 
 use crate::error::SimulationError;
 
@@ -18,14 +16,12 @@ pub trait Simulator: Send + Sync + 'static {
         state_overrides: &StateOverride,
     ) -> Result<SimulationResult, SimulationError>;
 
-    /// Simulate a transaction with mailbox context (already-sent messages and
-    /// fulfilled dependencies).
+    /// Simulate a transaction with mailbox context from fulfilled dependencies.
     async fn simulate_with_mailbox(
         &self,
         chain_id: ChainId,
         tx: &[u8],
         state_overrides: &StateOverride,
-        already_sent_msgs: &[CrossRollupMessage],
         fulfilled_deps: &[CrossRollupDependency],
     ) -> Result<SimulationResult, SimulationError>;
 }

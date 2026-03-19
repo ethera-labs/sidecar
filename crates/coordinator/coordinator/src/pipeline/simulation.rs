@@ -109,12 +109,12 @@ impl DefaultCoordinator {
             }
         };
 
-        // Initialize local tracking once. These are refreshed from state only
+        // Initialize fulfilled deps once. They are refreshed from state only
         // after a dep-wait cycle, not on every simulation attempt.
-        let (mut already_sent_msgs, mut fulfilled_deps) = {
+        let mut fulfilled_deps = {
             let state = self.state.read().await;
             match state.pending.get(instance_id) {
-                Some(xt) => (xt.outbound_messages.clone(), xt.fulfilled_deps.clone()),
+                Some(xt) => xt.fulfilled_deps.clone(),
                 None => {
                     warn!(
                         instance_id,
@@ -136,7 +136,6 @@ impl DefaultCoordinator {
                         self.chain_id,
                         tx_bytes,
                         &current_overrides,
-                        &already_sent_msgs,
                         &fulfilled_deps,
                     )
                     .await;
@@ -168,13 +167,6 @@ impl DefaultCoordinator {
                         }
 
                         if result.success {
-                            // Extend local already_sent_msgs so the next TX in the
-                            // sequence doesn't re-send the same outbound messages.
-                            for msg in &result.outbound_messages {
-                                if !contains_message(&already_sent_msgs, msg) {
-                                    already_sent_msgs.push(msg.clone());
-                                }
-                            }
                             if let Err(e) = self
                                 .dispatch_outbound_mailbox(instance_id, &result.outbound_messages)
                                 .await
@@ -220,13 +212,12 @@ impl DefaultCoordinator {
                             return;
                         }
 
-                        // Deps were fulfilled: refresh locals from state once per
+                        // Deps were fulfilled: refresh local view from state once per
                         // dep-wait cycle instead of once per simulation attempt.
                         {
                             let state = self.state.read().await;
                             match state.pending.get(instance_id) {
                                 Some(xt) => {
-                                    already_sent_msgs = xt.outbound_messages.clone();
                                     fulfilled_deps = xt.fulfilled_deps.clone();
                                 }
                                 None => {
@@ -256,7 +247,7 @@ impl DefaultCoordinator {
 
     /// Record simulation results into XT state, update the chain overlay with
     /// the post-simulation overrides so subsequent XTs see the committed state,
-    /// and return the merged overrides for the next simulation step.
+    /// and return the overrides for the next simulation step.
     ///
     /// `block_number` and `flashblock_index` are the values captured at the
     /// start of `process_xt` so the overlay is tagged to the correct window
@@ -275,11 +266,11 @@ impl DefaultCoordinator {
         };
 
         let mut merged_overrides = base_overrides.clone();
-        if let Some(ref result_overrides) = result.state_overrides {
-            merge_overrides(&mut merged_overrides, result_overrides);
+        if result.success {
+            if let Some(ref result_overrides) = result.state_overrides {
+                merge_overrides(&mut merged_overrides, result_overrides);
+            }
         }
-        xt.state_overrides
-            .insert(self.chain_id, merged_overrides.clone());
 
         for dep in &result.dependencies {
             let key = dep_key(dep);
@@ -323,14 +314,24 @@ impl DefaultCoordinator {
         deps: &[CrossRollupDependency],
     ) -> bool {
         let deadline = Instant::now() + Duration::from_millis(self.circ_timeout_ms);
+        let wait_started = StdInstant::now();
         loop {
             let fulfilled = self
                 .fulfill_dependencies_from_mailbox(instance_id, deps)
                 .await;
             if fulfilled > 0 {
+                if let Some(m) = &self.metrics {
+                    m.mailbox_wait_duration_seconds
+                        .observe(wait_started.elapsed().as_secs_f64());
+                }
                 return true;
             }
             if Instant::now() >= deadline {
+                if let Some(m) = &self.metrics {
+                    m.mailbox_wait_duration_seconds
+                        .observe(wait_started.elapsed().as_secs_f64());
+                    m.mailbox_wait_timeout_total.inc();
+                }
                 return false;
             }
             // Clone the Arc before dropping the lock so we can call .notified()
@@ -342,7 +343,14 @@ impl DefaultCoordinator {
             };
             tokio::select! {
                 _ = notify.notified() => {}
-                _ = sleep_until(deadline) => { return false; }
+                _ = sleep_until(deadline) => {
+                    if let Some(m) = &self.metrics {
+                        m.mailbox_wait_duration_seconds
+                            .observe(wait_started.elapsed().as_secs_f64());
+                        m.mailbox_wait_timeout_total.inc();
+                    }
+                    return false;
+                }
             }
         }
     }
@@ -553,7 +561,16 @@ impl DefaultCoordinator {
 
 #[cfg(test)]
 mod tests {
+    use alloy::primitives::Address;
+    use alloy_rpc_types_eth::state::AccountOverride;
+    use async_trait::async_trait;
     use compose_primitives::ChainId;
+    use compose_primitives::StateOverride;
+    use compose_primitives::{CrossRollupDependency, SimulationResult};
+    use compose_simulation::error::SimulationError;
+    use compose_simulation::traits::Simulator;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::{Arc, Mutex};
 
     use crate::coordinator::DefaultCoordinator;
     use crate::model::pending_xt::PendingXt;
@@ -621,13 +638,6 @@ mod tests {
         assert_eq!(xt.decision, Some(false));
     }
 
-    use async_trait::async_trait;
-    use compose_primitives::StateOverride;
-    use compose_primitives::{CrossRollupDependency, CrossRollupMessage, SimulationResult};
-    use compose_simulation::error::SimulationError;
-    use compose_simulation::traits::Simulator;
-    use std::sync::Arc;
-
     /// Simple stub simulator for testing: always returns success or always fails.
     struct StubSimulator {
         succeed: bool,
@@ -659,10 +669,69 @@ mod tests {
             chain_id: ChainId,
             tx: &[u8],
             state_overrides: &StateOverride,
-            _already_sent_msgs: &[CrossRollupMessage],
             _fulfilled_deps: &[CrossRollupDependency],
         ) -> Result<SimulationResult, SimulationError> {
             self.simulate(chain_id, tx, state_overrides).await
+        }
+    }
+
+    struct RetryRecordingSimulator {
+        calls: AtomicUsize,
+        seen_overrides: Mutex<Vec<StateOverride>>,
+        dependency: CrossRollupDependency,
+        failed_override_addr: Address,
+    }
+
+    #[async_trait]
+    impl Simulator for RetryRecordingSimulator {
+        async fn simulate(
+            &self,
+            chain_id: ChainId,
+            tx: &[u8],
+            state_overrides: &StateOverride,
+        ) -> Result<SimulationResult, SimulationError> {
+            self.simulate_with_mailbox(chain_id, tx, state_overrides, &[])
+                .await
+        }
+
+        async fn simulate_with_mailbox(
+            &self,
+            _chain_id: ChainId,
+            _tx: &[u8],
+            state_overrides: &StateOverride,
+            _fulfilled_deps: &[CrossRollupDependency],
+        ) -> Result<SimulationResult, SimulationError> {
+            self.seen_overrides
+                .lock()
+                .unwrap()
+                .push(state_overrides.clone());
+
+            let call = self.calls.fetch_add(1, Ordering::SeqCst);
+            if call == 0 {
+                let mut failed_overrides = StateOverride::default();
+                failed_overrides.insert(
+                    self.failed_override_addr,
+                    AccountOverride {
+                        nonce: Some(9),
+                        ..Default::default()
+                    },
+                );
+                Ok(SimulationResult {
+                    success: false,
+                    error: Some("missing mailbox".to_string()),
+                    state_overrides: Some(failed_overrides),
+                    dependencies: vec![self.dependency.clone()],
+                    outbound_messages: Vec::new(),
+                })
+            } else {
+                Ok(SimulationResult {
+                    success: true,
+                    error: None,
+                    state_overrides: None,
+                    dependencies: Vec::new(),
+                    outbound_messages: Vec::new(),
+                })
+            }
         }
     }
 
@@ -740,5 +809,85 @@ mod tests {
         let state = coordinator.state.read().await;
         let xt = state.pending.get("xt-77777-12").unwrap();
         assert_eq!(xt.local_vote, Some(false));
+    }
+
+    #[tokio::test]
+    async fn process_xt_does_not_carry_failed_dependency_overrides_into_retry() {
+        let base_addr = Address::repeat_byte(0x11);
+        let failed_addr = Address::repeat_byte(0x22);
+        let dependency = CrossRollupDependency {
+            source_chain_id: ChainId(88888),
+            dest_chain_id: ChainId(77777),
+            sender: Address::repeat_byte(0x33),
+            receiver: Address::repeat_byte(0x44),
+            label: b"SEND".to_vec(),
+            data: None,
+            session_id: None,
+        };
+
+        let simulator = Arc::new(RetryRecordingSimulator {
+            calls: AtomicUsize::new(0),
+            seen_overrides: Mutex::new(Vec::new()),
+            dependency: dependency.clone(),
+            failed_override_addr: failed_addr,
+        });
+        let coordinator = DefaultCoordinator::new(
+            ChainId(77777),
+            Some(simulator.clone()),
+            None,
+            None,
+            None,
+            None,
+            None,
+            1000,
+        );
+
+        let mut base_overrides = StateOverride::default();
+        base_overrides.insert(
+            base_addr,
+            AccountOverride {
+                nonce: Some(7),
+                ..Default::default()
+            },
+        );
+
+        {
+            let mut state = coordinator.state.write().await;
+            state.chain_states.insert(
+                ChainId(77777),
+                compose_primitives::ChainState {
+                    chain_id: ChainId(77777),
+                    block_number: 1,
+                    flashblock_index: 1,
+                    state_root: Default::default(),
+                    timestamp: 0,
+                    gas_limit: 30_000_000,
+                    state_overrides: Some(base_overrides.clone()),
+                },
+            );
+
+            let mut xt = PendingXt::new("xt-77777-13".to_string(), b"xt-77777-13".to_vec());
+            xt.raw_txs.insert(ChainId(77777), vec![vec![0xab, 0xcd]]);
+            xt.pending_mailbox.push(compose_proto::MailboxMessage {
+                source_chain: 88888,
+                destination_chain: 77777,
+                label: "SEND".to_string(),
+                data: vec![vec![1, 2, 3]],
+                ..Default::default()
+            });
+            state.pending.insert(xt.id.clone(), xt);
+        }
+
+        coordinator.process_xt("xt-77777-13").await;
+
+        let seen = simulator.seen_overrides.lock().unwrap();
+        assert_eq!(seen.len(), 2);
+        assert!(seen[0].contains_key(&base_addr));
+        assert!(!seen[0].contains_key(&failed_addr));
+        assert!(seen[1].contains_key(&base_addr));
+        assert!(
+            !seen[1].contains_key(&failed_addr),
+            "retry should start from base overrides, not failed-trace post-state"
+        );
     }
 }

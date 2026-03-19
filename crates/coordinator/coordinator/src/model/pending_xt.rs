@@ -6,7 +6,6 @@ use std::time::Instant;
 use alloy::primitives::Address;
 use compose_primitives::{
     ChainId, CrossRollupDependency, CrossRollupMessage, InstanceId, PeriodId, SequenceNumber,
-    StateOverride,
 };
 use compose_proto::MailboxMessage;
 
@@ -25,8 +24,6 @@ pub struct PendingXt {
 
     /// Raw RLP-encoded transactions per chain.
     pub raw_txs: HashMap<ChainId, Vec<Vec<u8>>>,
-    /// State overrides accumulated during simulation, keyed by chain.
-    pub state_overrides: HashMap<ChainId, StateOverride>,
 
     /// When the XT was created.
     pub created_at: Instant,
@@ -83,7 +80,6 @@ impl PendingXt {
             period_id: PeriodId(0),
             sequence_num: SequenceNumber(0),
             raw_txs: HashMap::new(),
-            state_overrides: HashMap::new(),
             created_at: Instant::now(),
             simulated_at: None,
             decided_at: None,
@@ -121,9 +117,5 @@ impl PendingXt {
     pub fn record_decision(&mut self, decision: bool) {
         self.decision = Some(decision);
         self.decided_at = Some(Instant::now());
-        // state_overrides is only used during simulation; free it immediately
-        // after the decision so we don't hold large overlay maps until the
-        // cleanup loop runs.
-        self.state_overrides.clear();
     }
 }
