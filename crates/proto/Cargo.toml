@@ -13,6 +13,3 @@ workspace = true
 compose-primitives.workspace = true
 prost.workspace = true
 hex.workspace = true
-
-[build-dependencies]
-prost-build.workspace = true

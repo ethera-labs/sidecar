@@ -1,17 +1,32 @@
-FROM rust:1.91-alpine AS builder
+FROM rust:1.91-alpine AS chef
 
-RUN apk add --no-cache musl-dev protobuf-dev openssl-dev openssl-libs-static
+RUN apk add --no-cache musl-dev && cargo install cargo-chef --locked
 
 WORKDIR /app
-COPY . .
-RUN cargo build --release -p sidecar
+
+FROM chef AS planner
+
+COPY Cargo.lock Cargo.toml rust-toolchain.toml rustfmt.toml ./
+COPY bin ./bin
+COPY crates ./crates
+RUN cargo chef prepare --recipe-path recipe.json
+
+FROM chef AS builder
+
+COPY --from=planner /app/recipe.json recipe.json
+RUN cargo chef cook --locked --release --recipe-path recipe.json
+
+COPY Cargo.lock Cargo.toml rust-toolchain.toml rustfmt.toml ./
+COPY bin ./bin
+COPY crates ./crates
+RUN cargo build --locked --release -p sidecar
 
 FROM alpine:3.21
 
-RUN apk add --no-cache ca-certificates wget
+RUN apk add --no-cache ca-certificates
 
 COPY --from=builder /app/target/release/sidecar /usr/local/bin/sidecar
-COPY --from=builder /app/configs /etc/sidecar/configs
+COPY configs /etc/sidecar/configs
 
 EXPOSE 8090
 
