@@ -14,10 +14,9 @@ RUN cargo chef prepare --recipe-path recipe.json
 FROM chef AS builder
 
 COPY --from=planner /app/recipe.json recipe.json
-COPY Cargo.lock ./
-RUN cargo chef cook --locked --release --recipe-path recipe.json
+RUN cargo chef cook --release --recipe-path recipe.json
 
-COPY Cargo.toml rust-toolchain.toml rustfmt.toml ./
+COPY Cargo.lock Cargo.toml rust-toolchain.toml rustfmt.toml ./
 COPY bin ./bin
 COPY crates ./crates
 RUN cargo build --locked --release -p sidecar
