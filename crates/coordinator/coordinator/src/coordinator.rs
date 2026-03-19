@@ -28,6 +28,8 @@ use crate::nonce_manager::DeferredNonceManager;
 use crate::pipeline::delivery::build_sender_nonce_cache;
 use crate::pipeline::submission::{build_xt_request, xt_request_fingerprint};
 
+const DEFAULT_BUILDER_HOLD_POLL_MS: u64 = 10;
+
 /// Shared coordinator state protected by a `RwLock`.
 #[derive(Debug)]
 pub(crate) struct CoordinatorState {
@@ -128,6 +130,7 @@ pub struct DefaultCoordinator {
     pub(crate) peer_coordinator: Option<Arc<dyn PeerCoordinator>>,
     pub(crate) put_inbox_builder: Option<Arc<dyn PutInboxBuilder>>,
     pub(crate) circ_timeout_ms: u64,
+    pub(crate) builder_hold_poll_ms: u64,
     pub(crate) task_tracker: TaskTracker,
     pub(crate) metrics: Option<Arc<SidecarMetrics>>,
 }
@@ -137,6 +140,7 @@ impl std::fmt::Debug for DefaultCoordinator {
         f.debug_struct("DefaultCoordinator")
             .field("chain_id", &self.chain_id)
             .field("circ_timeout_ms", &self.circ_timeout_ms)
+            .field("builder_hold_poll_ms", &self.builder_hold_poll_ms)
             .finish()
     }
 }
@@ -164,6 +168,7 @@ impl DefaultCoordinator {
             peer_coordinator,
             put_inbox_builder,
             circ_timeout_ms,
+            builder_hold_poll_ms: DEFAULT_BUILDER_HOLD_POLL_MS,
             task_tracker: TaskTracker::new(),
             metrics: None,
         }
@@ -172,6 +177,11 @@ impl DefaultCoordinator {
     /// Attach a metrics instance to this coordinator.
     pub fn set_metrics(&mut self, metrics: Arc<SidecarMetrics>) {
         self.metrics = Some(metrics);
+    }
+
+    /// Configure how long builders should wait before retrying after a hold.
+    pub fn set_builder_hold_poll_ms(&mut self, ms: u64) {
+        self.builder_hold_poll_ms = ms.max(1);
     }
 
     /// Start the coordinator's background tasks (cleanup loop, etc.).

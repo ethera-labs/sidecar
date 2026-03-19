@@ -23,6 +23,7 @@ pub struct CoordinatorBuilder {
     put_inbox_builder: Option<Arc<dyn PutInboxBuilder>>,
     metrics: Option<Arc<SidecarMetrics>>,
     circ_timeout_ms: u64,
+    builder_hold_poll_ms: u64,
 }
 
 impl std::fmt::Debug for CoordinatorBuilder {
@@ -30,6 +31,7 @@ impl std::fmt::Debug for CoordinatorBuilder {
         f.debug_struct("CoordinatorBuilder")
             .field("chain_id", &self.chain_id)
             .field("circ_timeout_ms", &self.circ_timeout_ms)
+            .field("builder_hold_poll_ms", &self.builder_hold_poll_ms)
             .finish()
     }
 }
@@ -46,6 +48,7 @@ impl CoordinatorBuilder {
             put_inbox_builder: None,
             metrics: None,
             circ_timeout_ms: 10_000,
+            builder_hold_poll_ms: 10,
         }
     }
 
@@ -89,6 +92,11 @@ impl CoordinatorBuilder {
         self
     }
 
+    pub fn builder_hold_poll_ms(mut self, ms: u64) -> Self {
+        self.builder_hold_poll_ms = ms;
+        self
+    }
+
     pub fn build(self) -> DefaultCoordinator {
         let mut coord = DefaultCoordinator::new(
             self.chain_id,
@@ -100,6 +108,7 @@ impl CoordinatorBuilder {
             self.put_inbox_builder,
             self.circ_timeout_ms,
         );
+        coord.set_builder_hold_poll_ms(self.builder_hold_poll_ms);
         if let Some(m) = self.metrics {
             coord.set_metrics(m);
         }

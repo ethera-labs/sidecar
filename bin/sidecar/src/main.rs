@@ -67,7 +67,9 @@ fn build_coordinator(
 ) -> (DefaultCoordinator, Option<Arc<QuicClient>>) {
     let chain_id = args.chain.chain_id();
 
-    let mut builder = CoordinatorBuilder::new(chain_id).metrics(metrics);
+    let mut builder = CoordinatorBuilder::new(chain_id)
+        .metrics(metrics)
+        .builder_hold_poll_ms(args.coordinator.builder_hold_poll_ms);
 
     if !args.chain.rpc.is_empty() {
         let rpc_chains = vec![ChainRpcConfig {

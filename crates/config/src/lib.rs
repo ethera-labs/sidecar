@@ -13,6 +13,9 @@ pub struct SidecarArgs {
     pub server: ServerArgs,
 
     #[command(flatten)]
+    pub coordinator: CoordinatorArgs,
+
+    #[command(flatten)]
     pub publisher: PublisherArgs,
 
     #[command(flatten)]
@@ -23,6 +26,18 @@ pub struct SidecarArgs {
 
     #[command(flatten)]
     pub log: LogArgs,
+}
+
+/// Coordinator timing settings.
+#[derive(Debug, Clone, clap::Args)]
+pub struct CoordinatorArgs {
+    /// Milliseconds builders should wait before retrying after a hold response.
+    #[arg(
+        long = "coordinator.builder-hold-poll-ms",
+        env = "SIDECAR_BUILDER_HOLD_POLL_MS",
+        default_value = "10"
+    )]
+    pub builder_hold_poll_ms: u64,
 }
 
 /// HTTP server settings.
@@ -226,6 +241,7 @@ mod tests {
     fn default_args_are_valid() {
         let args = SidecarArgs::parse_from(["sidecar"]);
         assert_eq!(args.server.listen_addr, "0.0.0.0:8080");
+        assert_eq!(args.coordinator.builder_hold_poll_ms, 10);
         assert!(!args.publisher.enabled);
         assert_eq!(args.chain.id, 0);
         assert_eq!(args.log.level, "info");
@@ -238,6 +254,8 @@ mod tests {
             "sidecar",
             "--server.listen-addr",
             "0.0.0.0:9090",
+            "--coordinator.builder-hold-poll-ms",
+            "7",
             "--chain.id",
             "77777",
             "--chain.rpc",
@@ -250,6 +268,7 @@ mod tests {
             "debug",
         ]);
         assert_eq!(args.server.listen_addr, "0.0.0.0:9090");
+        assert_eq!(args.coordinator.builder_hold_poll_ms, 7);
         assert_eq!(args.chain.id, 77777);
         assert_eq!(args.chain.rpc, "http://localhost:8545");
         assert!(args.publisher.enabled);

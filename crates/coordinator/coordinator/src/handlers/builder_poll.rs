@@ -175,7 +175,7 @@ impl DefaultCoordinator {
                     return Ok(BuilderPollResponse {
                         hold: true,
                         transactions: Vec::new(),
-                        poll_after_ms: Some(50),
+                        poll_after_ms: Some(self.builder_hold_poll_ms),
                         max_hold_ms: Some(self.circ_timeout_ms),
                     });
                 }
@@ -263,7 +263,7 @@ impl DefaultCoordinator {
                 return Ok(BuilderPollResponse {
                     hold: true,
                     transactions: Vec::new(),
-                    poll_after_ms: Some(50),
+                    poll_after_ms: Some(self.builder_hold_poll_ms),
                     max_hold_ms: Some(self.circ_timeout_ms),
                 });
             }
@@ -315,7 +315,7 @@ impl DefaultCoordinator {
             Ok(BuilderPollResponse {
                 hold: true,
                 transactions: Vec::new(),
-                poll_after_ms: Some(50),
+                poll_after_ms: Some(self.builder_hold_poll_ms),
                 max_hold_ms: Some(self.circ_timeout_ms),
             })
         } else {
@@ -475,8 +475,9 @@ mod tests {
 
     #[tokio::test]
     async fn builder_poll_returns_hold_when_undecided_xt_exists() {
-        let coordinator =
+        let mut coordinator =
             DefaultCoordinator::new(CHAIN, None, None, None, None, None, None, 10_000);
+        coordinator.set_builder_hold_poll_ms(7);
 
         {
             let mut state = coordinator.state.write().await;
@@ -491,6 +492,7 @@ mod tests {
             .await
             .unwrap();
         assert!(resp.hold);
+        assert_eq!(resp.poll_after_ms, Some(7));
         assert!(resp.transactions.is_empty());
     }
 
