@@ -46,6 +46,7 @@ impl DefaultCoordinator {
 
         let sender_nonces = build_sender_nonce_cache(&raw_txs);
 
+        let fingerprint = xt_request_fingerprint(xt_request);
         let mut state = self.state.write().await;
 
         if state.pending.contains_key(&instance_id) {
@@ -60,6 +61,10 @@ impl DefaultCoordinator {
             .filter(|xt| xt.decision.is_none())
             .count();
         if undecided_count >= MAX_PENDING_XTS {
+            let error = CoordinatorError::TooManyPendingInstances(MAX_PENDING_XTS).to_string();
+            drop(state);
+            self.resolve_pending_submission(&fingerprint, Err(error))
+                .await;
             if let Some(m) = &self.metrics {
                 m.xt_received_total.inc();
             }
@@ -68,6 +73,11 @@ impl DefaultCoordinator {
 
         if !state.period_initialized {
             drop(state);
+            self.resolve_pending_submission(
+                &fingerprint,
+                Err(CoordinatorError::PeriodNotInitialized.to_string()),
+            )
+            .await;
             warn!(instance_id = %instance_id, "Period not initialized, rejecting");
             self.reject_start_instance(&instance_id, msg).await;
             return Ok(());
@@ -77,12 +87,28 @@ impl DefaultCoordinator {
         let current_period = state.current_period_id;
         if msg_period < current_period {
             drop(state);
+            self.resolve_pending_submission(
+                &fingerprint,
+                Err(format!(
+                    "publisher start-instance rejected: stale period {} < current {}",
+                    msg_period.0, current_period.0
+                )),
+            )
+            .await;
             warn!(instance_id = %instance_id, msg_period = msg_period.0, current_period = current_period.0, "Stale period, rejecting");
             self.reject_start_instance(&instance_id, msg).await;
             return Ok(());
         }
         if msg_period > current_period {
             drop(state);
+            self.resolve_pending_submission(
+                &fingerprint,
+                Err(format!(
+                    "publisher start-instance rejected: future period {} > current {}",
+                    msg_period.0, current_period.0
+                )),
+            )
+            .await;
             warn!(instance_id = %instance_id, msg_period = msg_period.0, current_period = current_period.0, "Future period (last block still building), rejecting");
             self.reject_start_instance(&instance_id, msg).await;
             return Ok(());
@@ -91,15 +117,12 @@ impl DefaultCoordinator {
         let msg_seq = SequenceNumber(msg.sequence_number);
         if msg_seq <= state.last_sequence_num {
             drop(state);
+            self.resolve_pending_submission(
+                &fingerprint,
+                Err(CoordinatorError::StaleSequence.to_string()),
+            )
+            .await;
             warn!(instance_id = %instance_id, "Stale sequence, rejecting");
-            self.reject_start_instance(&instance_id, msg).await;
-            return Ok(());
-        }
-
-        if includes_local && state.has_active_instance(self.chain_id) {
-            state.last_sequence_num = msg_seq;
-            drop(state);
-            warn!(instance_id = %instance_id, "Active instance blocking, rejecting");
             self.reject_start_instance(&instance_id, msg).await;
             return Ok(());
         }
@@ -112,7 +135,7 @@ impl DefaultCoordinator {
         xt.raw_txs = raw_txs;
         xt.sender_nonces = sender_nonces;
 
-        // Pre-lock so builder_poll won't spawn a duplicate simulation.
+        // Pre-lock so only one local simulation task claims this XT.
         if includes_local {
             xt.locked_chains.insert(self.chain_id);
         }
@@ -121,13 +144,6 @@ impl DefaultCoordinator {
             .mailbox_index
             .insert(msg.instance_id.clone(), instance_id.clone());
         state.pending.insert(instance_id.clone(), xt);
-
-        // If this XT was locally submitted, resolve the waiting caller with
-        // the publisher-assigned instance_id.
-        let fingerprint = xt_request_fingerprint(xt_request);
-        if let Some(tx) = state.pending_submissions.remove(&fingerprint) {
-            let _ = tx.send(instance_id.clone());
-        }
 
         // Drain messages that arrived before the XT was registered (race window).
         let buffered = state.drain_mailbox_buffer(&msg.instance_id);
@@ -155,8 +171,26 @@ impl DefaultCoordinator {
             m.xt_pending_count.inc();
         }
 
+        let local_submission = state
+            .pending
+            .get(&instance_id)
+            .and_then(|xt| self.local_builder_submission(xt));
+
         // Release the write lock before spawning so process_xt can acquire it.
         drop(state);
+
+        if let Some(submission) = local_submission {
+            if let Err(err) = self.submit_xt_to_builder(submission).await {
+                self.remove_pending_xt(&instance_id).await;
+                self.resolve_pending_submission(&fingerprint, Err(err.to_string()))
+                    .await;
+                self.reject_start_instance(&instance_id, msg).await;
+                return Err(err);
+            }
+        }
+
+        self.resolve_pending_submission(&fingerprint, Ok(instance_id.clone()))
+            .await;
 
         if includes_local {
             let coordinator = self.clone();
@@ -190,5 +224,52 @@ impl DefaultCoordinator {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use compose_primitives::{ChainId, PeriodId};
+    use compose_proto::{StartInstance, TransactionRequest, XtRequest};
+
+    use crate::coordinator::DefaultCoordinator;
+
+    fn start_instance(sequence_number: u64) -> StartInstance {
+        StartInstance {
+            instance_id: format!("xt-{sequence_number}").into_bytes(),
+            period_id: 1,
+            sequence_number,
+            xt_request: Some(XtRequest {
+                transaction_requests: vec![TransactionRequest {
+                    chain_id: 77777,
+                    transaction: vec![vec![sequence_number as u8]],
+                }],
+            }),
+        }
+    }
+
+    #[tokio::test]
+    async fn handle_start_instance_allows_multiple_local_xts() {
+        let coordinator =
+            DefaultCoordinator::new(ChainId(77777), None, None, None, None, None, 1000);
+
+        {
+            let mut state = coordinator.state.write().await;
+            state.period_initialized = true;
+            state.current_period_id = PeriodId(1);
+        }
+
+        coordinator
+            .handle_start_instance(&start_instance(1))
+            .await
+            .unwrap();
+        coordinator
+            .handle_start_instance(&start_instance(2))
+            .await
+            .unwrap();
+
+        let state = coordinator.state.read().await;
+        assert_eq!(state.pending.len(), 2);
+        assert_eq!(state.last_sequence_num.0, 2);
     }
 }

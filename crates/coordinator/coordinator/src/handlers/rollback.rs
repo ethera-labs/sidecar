@@ -7,7 +7,7 @@ use crate::coordinator::DefaultCoordinator;
 use compose_primitives_traits::CoordinatorError;
 
 impl DefaultCoordinator {
-    /// Abort all undecided instances and reset period state.
+    /// Abort all pending local builder reservations and reset period state.
     pub async fn handle_rollback(
         &self,
         period_id: PeriodId,
@@ -17,12 +17,17 @@ impl DefaultCoordinator {
         let mut state = self.state.write().await;
 
         let mut aborted = 0;
+        let mut builder_abort_ids = Vec::new();
         for xt in state.pending.values_mut() {
-            if xt.decision.is_some() {
-                continue;
+            if let Some(crate::handlers::builder_control::XtBuilderCommand::Abort { instance_id }) =
+                self.local_builder_command(xt, false)
+            {
+                builder_abort_ids.push(instance_id);
             }
-            xt.record_decision(false);
-            aborted += 1;
+            if xt.decision != Some(false) {
+                xt.record_decision(false);
+                aborted += 1;
+            }
         }
 
         state.period_initialized = false;
@@ -32,29 +37,33 @@ impl DefaultCoordinator {
         state.last_known_blocks.clear();
         state.chain_overlay.clear();
         state.mailbox_buffer.clear();
-        state.pending_submissions.clear();
+        let pending_submissions = std::mem::take(&mut state.pending_submissions);
 
         warn!(
             period_id = period_id.0,
             last_finalized_superblock = last_finalized_superblock_num,
             aborted_instances = aborted,
-            "Rollback received, all undecided instances aborted"
+            "Rollback received, pending instances aborted"
         );
 
         drop(state);
 
-        if let Some(builder) = &self.put_inbox_builder {
-            let b = builder.clone();
-            if let Err(e) = self
-                .nonce_manager
-                .resync(move || {
-                    let b = b.clone();
-                    async move { b.pending_nonce_at().await }
-                })
-                .await
-            {
-                warn!(error = %e, "Failed to resync putInbox nonce on rollback");
-            }
+        for instance_id in &builder_abort_ids {
+            self.apply_builder_command(super::builder_control::XtBuilderCommand::Abort {
+                instance_id: instance_id.clone(),
+            })
+            .await?;
+        }
+
+        if let Err(err) = self.resync_put_inbox_nonce().await {
+            warn!(error = %err, "Failed to resync putInbox nonce after rollback");
+        }
+
+        for waiters in pending_submissions.into_values() {
+            Self::notify_pending_submission_waiters(
+                waiters,
+                Err("publisher submission aborted by rollback".to_string()),
+            );
         }
 
         Ok(())
@@ -70,7 +79,7 @@ mod tests {
     #[tokio::test]
     async fn handle_rollback_updates_period_and_superblock() {
         let coordinator =
-            DefaultCoordinator::new(ChainId(77777), None, None, None, None, None, None, 1000);
+            DefaultCoordinator::new(ChainId(77777), None, None, None, None, None, 1000);
 
         // Set initial state.
         {

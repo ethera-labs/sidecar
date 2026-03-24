@@ -1,6 +1,6 @@
 //! Coordinator event handlers for protocol and peer inputs.
 
-pub mod builder_poll;
+pub mod builder_control;
 pub mod decision;
 pub mod forwarded_xt;
 pub mod mailbox;

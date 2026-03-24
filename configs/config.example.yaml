@@ -1,4 +1,4 @@
-# Compose Sidecar Configuration
+# Ethera Sidecar Configuration
 #
 # All settings can be overridden via environment variables with the
 # SIDECAR_ prefix. For example, SIDECAR_SERVER_LISTEN_ADDR=":9090".
@@ -26,6 +26,7 @@ chains:
     - id: 901
       name: "chain-a"
       rpc: "http://op-geth-a:8545"
+      builder_rpc: "http://op-rbuilder-a:8545"
       mailbox_address: "0x0000000000000000000000000000000000000000"
       coordinator_key: ""  # Private key for signing putInbox transactions
 

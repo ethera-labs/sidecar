@@ -1,8 +1,8 @@
-//! Signed `putInbox` transaction builder using alloy.
+//! Signed `putInbox` transaction builder.
 
 use alloy::eips::{BlockId, Encodable2718};
 use alloy::network::{EthereumWallet, TransactionBuilder};
-use alloy::primitives::Address;
+use alloy::primitives::{Address, U256};
 use alloy::providers::{Provider, ProviderBuilder};
 use alloy::rpc::types::TransactionRequest;
 use alloy::signers::local::PrivateKeySigner;
@@ -10,9 +10,9 @@ use async_trait::async_trait;
 use compose_primitives::{ChainId, CrossRollupDependency};
 use compose_primitives_traits::{CoordinatorError, PutInboxBuilder};
 
-use crate::builder::encode_put_inbox_calldata;
+use crate::abi;
 
-/// Builds signed `putInbox` transactions for cross-rollup dependency delivery.
+/// Builds signed `putInbox` transactions for local dependency fulfillment.
 #[derive(Clone)]
 pub struct PutInboxTxBuilder {
     chain_id: ChainId,
@@ -73,7 +73,7 @@ impl PutInboxBuilder for PutInboxTxBuilder {
         let url = self
             .rpc_url
             .parse()
-            .map_err(|e| CoordinatorError::Other(format!("invalid chain rpc url: {e}")))?;
+            .map_err(|e| CoordinatorError::Other(format!("invalid builder rpc url: {e}")))?;
         let provider = ProviderBuilder::new().connect_http(url);
 
         provider
@@ -88,8 +88,17 @@ impl PutInboxBuilder for PutInboxTxBuilder {
         dep: &CrossRollupDependency,
         nonce: u64,
     ) -> Result<Vec<u8>, CoordinatorError> {
-        let calldata = encode_put_inbox_calldata(dep)
-            .map_err(|e| CoordinatorError::Mailbox(format!("encode putInbox calldata: {e}")))?;
+        let session_id = dep.session_id.unwrap_or(U256::ZERO);
+        let data = dep.data.as_deref().unwrap_or_default();
+        let calldata = abi::encode_put_inbox(
+            dep.source_chain_id.0,
+            dep.sender,
+            dep.receiver,
+            session_id,
+            &dep.label,
+            data,
+        )
+        .map_err(|e| CoordinatorError::Mailbox(format!("encode putInbox calldata: {e}")))?;
 
         let tx = TransactionRequest::default()
             .with_from(self.signer_address)

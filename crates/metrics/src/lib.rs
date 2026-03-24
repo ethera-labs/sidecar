@@ -22,12 +22,6 @@ pub struct SidecarMetrics {
     pub xt_decision_latency_seconds: Histogram,
     /// Current number of undecided (in-flight) XTs.
     pub xt_pending_count: Gauge,
-    /// Builder polls answered with a hold (undecided XT blocking).
-    pub builder_poll_hold_total: Counter<u64>,
-    /// Builder polls answered with committed transactions.
-    pub builder_poll_deliver_total: Counter<u64>,
-    /// Builder polls answered with no transactions and no hold.
-    pub builder_poll_empty_total: Counter<u64>,
     /// Inbound CIRC mailbox messages received.
     pub circ_messages_received_total: Counter<u64>,
     /// Outbound CIRC mailbox messages sent.
@@ -99,27 +93,6 @@ impl SidecarMetrics {
             xt_pending_count.clone(),
         );
 
-        let builder_poll_hold_total = Counter::default();
-        registry.register(
-            "sidecar_builder_poll_hold",
-            "Builder polls answered with a hold signal",
-            builder_poll_hold_total.clone(),
-        );
-
-        let builder_poll_deliver_total = Counter::default();
-        registry.register(
-            "sidecar_builder_poll_deliver",
-            "Builder polls that returned committed transactions",
-            builder_poll_deliver_total.clone(),
-        );
-
-        let builder_poll_empty_total = Counter::default();
-        registry.register(
-            "sidecar_builder_poll_empty",
-            "Builder polls that returned no transactions",
-            builder_poll_empty_total.clone(),
-        );
-
         let circ_messages_received_total = Counter::default();
         registry.register(
             "sidecar_circ_messages_received",
@@ -177,9 +150,6 @@ impl SidecarMetrics {
             mailbox_wait_duration_seconds,
             xt_decision_latency_seconds,
             xt_pending_count,
-            builder_poll_hold_total,
-            builder_poll_deliver_total,
-            builder_poll_empty_total,
             circ_messages_received_total,
             circ_messages_sent_total,
             vote_send_failed_total,

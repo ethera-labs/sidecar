@@ -8,7 +8,7 @@ use compose_primitives::ChainId;
 use compose_simulation::traits::Simulator;
 
 use compose_metrics::SidecarMetrics;
-use compose_primitives_traits::{MailboxSender, PublisherClient, PutInboxBuilder};
+use compose_primitives_traits::{MailboxSender, PublisherClient, PutInboxBuilder, XtBuilderClient};
 
 use crate::coordinator::DefaultCoordinator;
 
@@ -21,9 +21,9 @@ pub struct CoordinatorBuilder {
     mailbox_queue: Option<Arc<dyn MailboxQueue>>,
     peer_coordinator: Option<Arc<dyn PeerCoordinator>>,
     put_inbox_builder: Option<Arc<dyn PutInboxBuilder>>,
+    xt_builder_client: Option<Arc<dyn XtBuilderClient>>,
     metrics: Option<Arc<SidecarMetrics>>,
     circ_timeout_ms: u64,
-    builder_hold_poll_ms: u64,
 }
 
 impl std::fmt::Debug for CoordinatorBuilder {
@@ -31,7 +31,6 @@ impl std::fmt::Debug for CoordinatorBuilder {
         f.debug_struct("CoordinatorBuilder")
             .field("chain_id", &self.chain_id)
             .field("circ_timeout_ms", &self.circ_timeout_ms)
-            .field("builder_hold_poll_ms", &self.builder_hold_poll_ms)
             .finish()
     }
 }
@@ -46,9 +45,9 @@ impl CoordinatorBuilder {
             mailbox_queue: None,
             peer_coordinator: None,
             put_inbox_builder: None,
+            xt_builder_client: None,
             metrics: None,
             circ_timeout_ms: 10_000,
-            builder_hold_poll_ms: 10,
         }
     }
 
@@ -77,8 +76,13 @@ impl CoordinatorBuilder {
         self
     }
 
-    pub fn put_inbox_builder(mut self, b: Arc<dyn PutInboxBuilder>) -> Self {
-        self.put_inbox_builder = Some(b);
+    pub fn put_inbox_builder(mut self, builder: Arc<dyn PutInboxBuilder>) -> Self {
+        self.put_inbox_builder = Some(builder);
+        self
+    }
+
+    pub fn xt_builder_client(mut self, client: Arc<dyn XtBuilderClient>) -> Self {
+        self.xt_builder_client = Some(client);
         self
     }
 
@@ -92,11 +96,6 @@ impl CoordinatorBuilder {
         self
     }
 
-    pub fn builder_hold_poll_ms(mut self, ms: u64) -> Self {
-        self.builder_hold_poll_ms = ms;
-        self
-    }
-
     pub fn build(self) -> DefaultCoordinator {
         let mut coord = DefaultCoordinator::new(
             self.chain_id,
@@ -105,10 +104,14 @@ impl CoordinatorBuilder {
             self.mailbox_sender,
             self.mailbox_queue,
             self.peer_coordinator,
-            self.put_inbox_builder,
             self.circ_timeout_ms,
         );
-        coord.set_builder_hold_poll_ms(self.builder_hold_poll_ms);
+        if let Some(builder) = self.put_inbox_builder {
+            coord.set_put_inbox_builder(builder);
+        }
+        if let Some(client) = self.xt_builder_client {
+            coord.set_xt_builder_client(client);
+        }
         if let Some(m) = self.metrics {
             coord.set_metrics(m);
         }
