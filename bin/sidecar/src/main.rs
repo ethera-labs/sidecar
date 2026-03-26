@@ -69,25 +69,25 @@ fn build_coordinator(
     let chain_id = args.chain.chain_id();
 
     let mut builder = CoordinatorBuilder::new(chain_id).metrics(metrics);
-    let builder_rpc = args.chain.builder_rpc_url();
-    if !builder_rpc.is_empty() {
-        match HttpXtBuilderClient::new(builder_rpc.to_string()) {
+    let chain_rpc = &args.chain.rpc;
+    if !chain_rpc.is_empty() {
+        match HttpXtBuilderClient::new(chain_rpc.to_string()) {
             Ok(client) => {
                 builder = builder.xt_builder_client(Arc::new(client));
             }
             Err(e) => {
-                warn!(error = %e, endpoint = builder_rpc, "Failed to configure builder control client");
+                warn!(error = %e, endpoint = chain_rpc, "Failed to configure builder control client");
             }
         }
     }
 
-    let has_builder_rpc = !builder_rpc.is_empty();
+    let has_rpc = !chain_rpc.is_empty();
     let has_mailbox = !args.chain.mailbox_address.is_empty();
     let has_key = !args.chain.coordinator_key.is_empty();
     if has_builder_rpc && has_mailbox && has_key {
         match PutInboxTxBuilder::new(
             chain_id,
-            builder_rpc.to_string(),
+            chain_rpc.to_string(),
             args.chain.mailbox_address.clone(),
             args.chain.coordinator_key.clone(),
         ) {
@@ -95,7 +95,7 @@ fn build_coordinator(
                 builder = builder.put_inbox_builder(Arc::new(put_inbox));
             }
             Err(e) => {
-                warn!(error = %e, endpoint = builder_rpc, "Failed to configure putInbox builder");
+                warn!(error = %e, endpoint = chain_rpc, "Failed to configure putInbox builder");
             }
         }
     } else if has_mailbox || has_key {
