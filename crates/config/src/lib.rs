@@ -107,6 +107,15 @@ pub struct ChainArgs {
     #[arg(long = "chain.rpc", env = "SIDECAR_CHAIN_RPC", default_value = "")]
     pub rpc: String,
 
+    /// Builder RPC endpoint used for XT lifecycle control.
+    /// Falls back to `chain.rpc` when unset.
+    #[arg(
+        long = "chain.builder-rpc",
+        env = "SIDECAR_CHAIN_BUILDER_RPC",
+        default_value = ""
+    )]
+    pub builder_rpc: String,
+
     /// Mailbox contract address.
     #[arg(
         long = "chain.mailbox-address",
@@ -128,6 +137,15 @@ impl ChainArgs {
     /// Return the chain ID as a [`ChainId`].
     pub fn chain_id(&self) -> ChainId {
         ChainId(self.id)
+    }
+
+    /// Return the builder RPC endpoint, falling back to the chain RPC when unset.
+    pub fn builder_rpc_url(&self) -> &str {
+        if self.builder_rpc.is_empty() {
+            &self.rpc
+        } else {
+            &self.builder_rpc
+        }
     }
 }
 
@@ -280,5 +298,11 @@ mod tests {
     fn no_peers_when_none_configured() {
         let args = SidecarArgs::parse_from(["sidecar"]);
         assert!(args.peers.to_entries().is_empty());
+    }
+
+    #[test]
+    fn builder_rpc_falls_back_to_chain_rpc() {
+        let args = SidecarArgs::parse_from(["sidecar", "--chain.rpc", "http://localhost:8545"]);
+        assert_eq!(args.chain.builder_rpc_url(), "http://localhost:8545");
     }
 }

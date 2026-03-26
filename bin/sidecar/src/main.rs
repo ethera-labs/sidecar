@@ -84,7 +84,7 @@ fn build_coordinator(
     let has_rpc = !chain_rpc.is_empty();
     let has_mailbox = !args.chain.mailbox_address.is_empty();
     let has_key = !args.chain.coordinator_key.is_empty();
-    if has_rpc && has_mailbox && has_key {
+    if has_builder_rpc && has_mailbox && has_key {
         match PutInboxTxBuilder::new(
             chain_id,
             chain_rpc.to_string(),
@@ -100,7 +100,7 @@ fn build_coordinator(
         }
     } else if has_mailbox || has_key {
         warn!(
-            has_rpc,
+            has_builder_rpc,
             has_mailbox,
             has_coordinator_key = has_key,
             "putInbox builder disabled due to incomplete chain config"
