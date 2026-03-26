@@ -25,9 +25,9 @@ impl DefaultCoordinator {
         }
 
         let chain_ids: Vec<_> = xt.raw_txs.keys().copied().collect();
-
         let latency = xt.created_at.elapsed();
         xt.record_decision(decision);
+        let builder_command = self.local_builder_command(xt, decision);
 
         info!(instance_id, decision, "Decision received");
 
@@ -47,6 +47,12 @@ impl DefaultCoordinator {
             m.xt_pending_count.dec();
         }
 
+        drop(state);
+
+        if let Some(command) = builder_command {
+            self.apply_builder_command(command).await?;
+        }
+
         Ok(())
     }
 }
@@ -62,7 +68,7 @@ mod tests {
     #[tokio::test]
     async fn on_decision_ignores_duplicate() {
         let coordinator =
-            DefaultCoordinator::new(ChainId(77777), None, None, None, None, None, None, 1000);
+            DefaultCoordinator::new(ChainId(77777), None, None, None, None, None, 1000);
 
         {
             let mut state = coordinator.state.write().await;
@@ -91,7 +97,7 @@ mod tests {
     #[tokio::test]
     async fn on_decision_abort_clears_chain_overlay() {
         let coordinator =
-            DefaultCoordinator::new(ChainId(77777), None, None, None, None, None, None, 1000);
+            DefaultCoordinator::new(ChainId(77777), None, None, None, None, None, 1000);
 
         {
             let mut state = coordinator.state.write().await;
@@ -101,7 +107,7 @@ mod tests {
 
             state
                 .chain_overlay
-                .insert(ChainId(77777), ChainOverlay::new(1, 0));
+                .insert(ChainId(77777), ChainOverlay::new());
         }
 
         coordinator

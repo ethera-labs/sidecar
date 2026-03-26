@@ -7,6 +7,7 @@ use anyhow::Result;
 use clap::Parser;
 use compose_config::SidecarArgs;
 use compose_coordinator::builder::CoordinatorBuilder;
+use compose_coordinator::builder_client::HttpXtBuilderClient;
 use compose_coordinator::coordinator::DefaultCoordinator;
 use compose_mailbox::put_inbox::PutInboxTxBuilder;
 use compose_mailbox::queue::InMemoryQueue;
@@ -67,9 +68,44 @@ fn build_coordinator(
 ) -> (DefaultCoordinator, Option<Arc<QuicClient>>) {
     let chain_id = args.chain.chain_id();
 
-    let mut builder = CoordinatorBuilder::new(chain_id)
-        .metrics(metrics)
-        .builder_hold_poll_ms(args.coordinator.builder_hold_poll_ms);
+    let mut builder = CoordinatorBuilder::new(chain_id).metrics(metrics);
+    let builder_rpc = args.chain.builder_rpc_url();
+    if !builder_rpc.is_empty() {
+        match HttpXtBuilderClient::new(builder_rpc.to_string()) {
+            Ok(client) => {
+                builder = builder.xt_builder_client(Arc::new(client));
+            }
+            Err(e) => {
+                warn!(error = %e, endpoint = builder_rpc, "Failed to configure builder control client");
+            }
+        }
+    }
+
+    let has_builder_rpc = !builder_rpc.is_empty();
+    let has_mailbox = !args.chain.mailbox_address.is_empty();
+    let has_key = !args.chain.coordinator_key.is_empty();
+    if has_builder_rpc && has_mailbox && has_key {
+        match PutInboxTxBuilder::new(
+            chain_id,
+            builder_rpc.to_string(),
+            args.chain.mailbox_address.clone(),
+            args.chain.coordinator_key.clone(),
+        ) {
+            Ok(put_inbox) => {
+                builder = builder.put_inbox_builder(Arc::new(put_inbox));
+            }
+            Err(e) => {
+                warn!(error = %e, endpoint = builder_rpc, "Failed to configure putInbox builder");
+            }
+        }
+    } else if has_mailbox || has_key {
+        warn!(
+            has_builder_rpc,
+            has_mailbox,
+            has_coordinator_key = has_key,
+            "putInbox builder disabled due to incomplete chain config"
+        );
+    }
 
     if !args.chain.rpc.is_empty() {
         let rpc_chains = vec![ChainRpcConfig {
@@ -83,32 +119,6 @@ fn build_coordinator(
             }
         }
         builder = builder.simulator(Arc::new(sim));
-    }
-
-    let has_rpc = !args.chain.rpc.is_empty();
-    let has_mailbox = !args.chain.mailbox_address.is_empty();
-    let has_key = !args.chain.coordinator_key.is_empty();
-    if has_rpc && has_mailbox && has_key {
-        match PutInboxTxBuilder::new(
-            chain_id,
-            args.chain.rpc.clone(),
-            args.chain.mailbox_address.clone(),
-            args.chain.coordinator_key.clone(),
-        ) {
-            Ok(put_inbox) => {
-                builder = builder.put_inbox_builder(Arc::new(put_inbox));
-            }
-            Err(e) => {
-                warn!(error = %e, "Failed to configure putInbox builder");
-            }
-        }
-    } else if has_mailbox || has_key {
-        warn!(
-            has_rpc,
-            has_mailbox,
-            has_coordinator_key = has_key,
-            "putInbox builder disabled due to incomplete chain config"
-        );
     }
 
     builder = builder.mailbox_queue(Arc::new(InMemoryQueue::new()));

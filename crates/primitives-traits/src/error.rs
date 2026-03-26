@@ -25,9 +25,6 @@ pub enum CoordinatorError {
     #[error("stale sequence number")]
     StaleSequence,
 
-    #[error("active instance in progress")]
-    ActiveInstanceBlocking,
-
     #[error("no transactions provided")]
     NoTransactions,
 
@@ -48,6 +45,9 @@ pub enum CoordinatorError {
 
     #[error("put inbox builder not configured")]
     PutInboxNotConfigured,
+
+    #[error("builder control error: {0}")]
+    BuilderControl(String),
 
     #[error("timeout waiting for CIRC from chain {0}")]
     CircTimeout(u64),

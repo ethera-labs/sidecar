@@ -15,6 +15,7 @@ impl DefaultCoordinator {
         vote: bool,
     ) -> Result<(), CoordinatorError> {
         let mut state = self.state.write().await;
+        let mut builder_command = None;
 
         let xt = state
             .pending
@@ -51,6 +52,7 @@ impl DefaultCoordinator {
         );
 
         if let Some((decision, collected, expected)) = self.maybe_make_standalone_decision(xt) {
+            builder_command = self.local_builder_command(xt, decision);
             info!(
                 instance_id,
                 decision,
@@ -63,6 +65,12 @@ impl DefaultCoordinator {
                     .observe(xt.created_at.elapsed().as_secs_f64());
                 m.xt_pending_count.dec();
             }
+        }
+
+        drop(state);
+
+        if let Some(command) = builder_command {
+            self.apply_builder_command(command).await?;
         }
 
         Ok(())
@@ -79,7 +87,7 @@ mod tests {
     #[tokio::test]
     async fn duplicate_peer_vote_is_ignored() {
         let coordinator =
-            DefaultCoordinator::new(ChainId(77777), None, None, None, None, None, None, 1000);
+            DefaultCoordinator::new(ChainId(77777), None, None, None, None, None, 1000);
 
         {
             let mut state = coordinator.state.write().await;
@@ -109,7 +117,7 @@ mod tests {
     #[tokio::test]
     async fn peer_abort_vote_decides_immediately() {
         let coordinator =
-            DefaultCoordinator::new(ChainId(77777), None, None, None, None, None, None, 1000);
+            DefaultCoordinator::new(ChainId(77777), None, None, None, None, None, 1000);
 
         {
             let mut state = coordinator.state.write().await;

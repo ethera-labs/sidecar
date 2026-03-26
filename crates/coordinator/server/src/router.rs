@@ -13,8 +13,8 @@ pub fn build_router(state: AppState) -> Router {
     Router::new()
         // Builder endpoints
         .route(
-            "/transactions",
-            post(handlers::transactions::handle_builder_poll),
+            "/ethera/confirm",
+            post(handlers::ethera::handle_confirm_included),
         )
         // XT endpoints
         .route("/xt", post(handlers::xt::handle_submit_xt))

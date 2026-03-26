@@ -7,6 +7,7 @@ use tracing::{debug, info};
 
 use crate::coordinator::DefaultCoordinator;
 use crate::model::pending_xt::PendingXt;
+use crate::pipeline::delivery::build_sender_nonce_cache;
 use compose_primitives_traits::CoordinatorError;
 
 /// Maximum number of pending XTs before new submissions are rejected.
@@ -54,11 +55,12 @@ impl DefaultCoordinator {
         let has_local = clean_txs.contains_key(&self.chain_id);
 
         let mut xt = PendingXt::new(instance_id.to_string(), instance_id.as_bytes().to_vec());
+        xt.sender_nonces = build_sender_nonce_cache(&clean_txs);
         xt.raw_txs = clean_txs;
         xt.origin_chain = Some(origin_chain);
         xt.origin_seq = origin_seq;
 
-        // Pre-lock so builder_poll won't spawn a duplicate simulation.
+        // Pre-lock so only one local simulation task claims this XT.
         if has_local {
             xt.locked_chains.insert(self.chain_id);
         }
@@ -88,8 +90,20 @@ impl DefaultCoordinator {
             "Received forwarded XT from peer"
         );
 
+        let local_submission = state
+            .pending
+            .get(instance_id)
+            .and_then(|xt| self.local_builder_submission(xt));
+
         // Release the write lock before spawning so process_xt can acquire it.
         drop(state);
+
+        if let Some(submission) = local_submission {
+            if let Err(err) = self.submit_xt_to_builder(submission).await {
+                self.remove_pending_xt(instance_id).await;
+                return Err(err);
+            }
+        }
 
         if has_local {
             let coordinator = self.clone();
@@ -116,7 +130,7 @@ mod tests {
     #[tokio::test]
     async fn handle_forwarded_xt_rejects_when_at_max_pending() {
         let coordinator =
-            DefaultCoordinator::new(ChainId(77777), None, None, None, None, None, None, 1000);
+            DefaultCoordinator::new(ChainId(77777), None, None, None, None, None, 1000);
 
         // Fill pending with MAX_PENDING_XTS undecided XTs.
         {

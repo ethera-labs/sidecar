@@ -33,47 +33,26 @@ impl DefaultCoordinator {
     pub(crate) async fn process_xt(&self, instance_id: &str) {
         info!(instance_id, chain_id = %self.chain_id, "Processing XT");
 
-        // Capture everything we need from state in a single read lock. Chain
-        // state is read from the global `state.chain_states` (updated on every
-        // builder poll) rather than per-XT copies, which eliminates the
-        // per-XT `chain_states` HashMap allocation.
-        let (tx_bytes_list, mut current_overrides, sim_block_number, sim_flashblock_index) = {
+        // Capture everything we need from state in a single read lock. Start
+        // from the accumulated local overlay so later XTs see the post-state
+        // of previously committed local XTs in this period.
+        let (tx_bytes_list, mut current_overrides) = {
             let state = self.state.read().await;
             match state.pending.get(instance_id) {
                 Some(xt) => match xt.raw_txs.get(&self.chain_id) {
                     Some(txs) if !txs.is_empty() => {
-                        let chain_state = state.chain_states.get(&self.chain_id);
-                        let has_chain_state = chain_state.is_some();
-                        let has_overrides = chain_state
-                            .and_then(|cs| cs.state_overrides.as_ref())
-                            .is_some();
                         debug!(
                             instance_id,
                             chain_id = %self.chain_id,
-                            has_chain_state,
-                            has_overrides,
                             "Simulation state check"
                         );
 
-                        let block_number = chain_state.map(|cs| cs.block_number).unwrap_or(0);
-                        let flashblock_index =
-                            chain_state.map(|cs| cs.flashblock_index).unwrap_or(0);
-
-                        // Start from the builder-provided overrides for this chain,
-                        // then layer in any accumulated overlay from prior committed XTs
-                        // in the same block/flashblock window.
-                        let mut overrides = chain_state
-                            .and_then(|cs| cs.state_overrides.clone())
-                            .unwrap_or_default();
-
-                        // Apply chain overlay from prior committed XTs.
+                        let mut overrides = StateOverride::default();
                         if let Some(chain_overlay) = state.chain_overlay.get(&self.chain_id) {
-                            if chain_overlay.matches(block_number, flashblock_index) {
-                                merge_overrides(&mut overrides, &chain_overlay.overlay);
-                            }
+                            merge_overrides(&mut overrides, &chain_overlay.overlay);
                         }
 
-                        (txs.clone(), overrides, block_number, flashblock_index)
+                        (txs.clone(), overrides)
                     }
                     _ => {
                         warn!(instance_id, "No local transactions, rejecting");
@@ -146,13 +125,7 @@ impl DefaultCoordinator {
                 match sim_result {
                     Ok(result) => {
                         current_overrides = self
-                            .record_simulation_state(
-                                instance_id,
-                                &result,
-                                &current_overrides,
-                                sim_block_number,
-                                sim_flashblock_index,
-                            )
+                            .record_simulation_state(instance_id, &result, &current_overrides)
                             .await;
 
                         if !result.success && result.dependencies.is_empty() {
@@ -248,17 +221,11 @@ impl DefaultCoordinator {
     /// Record simulation results into XT state, update the chain overlay with
     /// the post-simulation overrides so subsequent XTs see the committed state,
     /// and return the overrides for the next simulation step.
-    ///
-    /// `block_number` and `flashblock_index` are the values captured at the
-    /// start of `process_xt` so the overlay is tagged to the correct window
-    /// regardless of any builder polls that arrive during simulation.
     async fn record_simulation_state(
         &self,
         instance_id: &str,
         result: &compose_primitives::SimulationResult,
         base_overrides: &StateOverride,
-        block_number: u64,
-        flashblock_index: u64,
     ) -> StateOverride {
         let mut state = self.state.write().await;
         let Some(xt) = state.pending.get_mut(instance_id) else {
@@ -285,20 +252,13 @@ impl DefaultCoordinator {
             }
         }
 
-        // Update the chain overlay for this block/flashblock window so that the
-        // next XT simulated on this chain sees the accumulated post-simulation state.
+        // Update the chain overlay so the next XT simulated on this chain sees
+        // the accumulated post-simulation state.
         if result.success {
             let overlay = state
                 .chain_overlay
                 .entry(self.chain_id)
-                .or_insert_with(|| ChainOverlay::new(block_number, flashblock_index));
-            // Reset overlay when moving to a new block/flashblock window, or
-            // when a reorg causes the block number to regress.
-            if !overlay.matches(block_number, flashblock_index)
-                || block_number < overlay.block_number
-            {
-                *overlay = ChainOverlay::new(block_number, flashblock_index);
-            }
+                .or_insert_with(ChainOverlay::new);
             merge_overrides(&mut overlay.overlay, &merged_overrides);
         }
 
@@ -469,6 +429,7 @@ impl DefaultCoordinator {
     ) -> Result<(), compose_primitives_traits::CoordinatorError> {
         let standalone_mode = !self.is_publisher_connected().await;
         let mut decision_made: Option<(bool, usize, usize)> = None;
+        let mut builder_command = None;
 
         let instance_bytes = {
             let mut state = self.state.write().await;
@@ -493,6 +454,9 @@ impl DefaultCoordinator {
             xt.locked_chains.insert(self.chain_id);
             if standalone_mode {
                 decision_made = self.maybe_make_standalone_decision(xt);
+                if let Some((decision, _, _)) = decision_made {
+                    builder_command = self.local_builder_command(xt, decision);
+                }
             }
             xt.instance_id.clone()
         };
@@ -517,6 +481,10 @@ impl DefaultCoordinator {
                 );
                 m.xt_pending_count.dec();
             }
+        }
+
+        if let Some(command) = builder_command {
+            self.apply_builder_command(command).await?;
         }
 
         if !standalone_mode {
@@ -573,12 +541,13 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     use crate::coordinator::DefaultCoordinator;
+    use crate::model::chain_overlay::ChainOverlay;
     use crate::model::pending_xt::PendingXt;
 
     #[tokio::test]
     async fn send_vote_does_not_overwrite_existing_local_vote() {
         let coordinator =
-            DefaultCoordinator::new(ChainId(77777), None, None, None, None, None, None, 1000);
+            DefaultCoordinator::new(ChainId(77777), None, None, None, None, None, 1000);
 
         {
             let mut state = coordinator.state.write().await;
@@ -597,7 +566,7 @@ mod tests {
     #[tokio::test]
     async fn send_vote_decides_when_peer_vote_already_present() {
         let coordinator =
-            DefaultCoordinator::new(ChainId(77777), None, None, None, None, None, None, 1000);
+            DefaultCoordinator::new(ChainId(77777), None, None, None, None, None, 1000);
 
         {
             let mut state = coordinator.state.write().await;
@@ -619,7 +588,7 @@ mod tests {
     #[tokio::test]
     async fn send_vote_applies_existing_abort_peer_vote() {
         let coordinator =
-            DefaultCoordinator::new(ChainId(77777), None, None, None, None, None, None, 1000);
+            DefaultCoordinator::new(ChainId(77777), None, None, None, None, None, 1000);
 
         {
             let mut state = coordinator.state.write().await;
@@ -745,7 +714,6 @@ mod tests {
             None,
             None,
             None,
-            None,
             1000,
         );
 
@@ -773,7 +741,6 @@ mod tests {
             None,
             None,
             None,
-            None,
             1000,
         );
 
@@ -794,7 +761,7 @@ mod tests {
     #[tokio::test]
     async fn process_xt_votes_false_when_no_local_txs() {
         let coordinator =
-            DefaultCoordinator::new(ChainId(77777), None, None, None, None, None, None, 1000);
+            DefaultCoordinator::new(ChainId(77777), None, None, None, None, None, 1000);
 
         {
             let mut state = coordinator.state.write().await;
@@ -838,7 +805,6 @@ mod tests {
             None,
             None,
             None,
-            None,
             1000,
         );
 
@@ -853,16 +819,10 @@ mod tests {
 
         {
             let mut state = coordinator.state.write().await;
-            state.chain_states.insert(
+            state.chain_overlay.insert(
                 ChainId(77777),
-                compose_primitives::ChainState {
-                    chain_id: ChainId(77777),
-                    block_number: 1,
-                    flashblock_index: 1,
-                    state_root: Default::default(),
-                    timestamp: 0,
-                    gas_limit: 30_000_000,
-                    state_overrides: Some(base_overrides.clone()),
+                ChainOverlay {
+                    overlay: base_overrides.clone(),
                 },
             );
 

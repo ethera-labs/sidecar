@@ -1,33 +1,11 @@
-//! Helpers for turning committed XTs into builder payloads.
+//! Helpers for deriving sender/nonce metadata from XT transactions.
 
 use std::collections::HashMap;
 
 use alloy::consensus::transaction::SignerRecoverable;
 use alloy::consensus::{Transaction, TxEnvelope};
 use alloy::primitives::Address;
-use compose_primitives::{
-    ChainId, CrossRollupDependency, InstanceId, StateOverride, TransactionPayload,
-};
-
-/// A committed XT ready to be delivered to the builder.
-#[derive(Debug)]
-pub struct DeliverableXt {
-    pub id: InstanceId,
-    pub put_inbox_txs: Vec<Vec<u8>>,
-    pub raw_txs: Vec<Vec<u8>>,
-    pub deps: Vec<CrossRollupDependency>,
-}
-
-/// Filter dependencies to only those targeting the given chain.
-pub fn deps_for_chain(
-    deps: &[CrossRollupDependency],
-    chain_id: ChainId,
-) -> Vec<CrossRollupDependency> {
-    deps.iter()
-        .filter(|dep| dep.dest_chain_id == chain_id)
-        .cloned()
-        .collect()
-}
+use compose_primitives::{ChainId, CrossRollupDependency};
 
 /// Decode the sender address and nonce from a raw RLP-encoded signed transaction.
 pub fn decode_sender_nonce(raw_tx: &[u8]) -> Option<(Address, u64)> {
@@ -38,10 +16,8 @@ pub fn decode_sender_nonce(raw_tx: &[u8]) -> Option<(Address, u64)> {
 
 /// Build a sender/nonce cache from each chain's first raw transaction.
 ///
-/// Performs ECDSA recovery once at XT registration so the builder poll path
-/// can skip repeated per-call recovery. Chains whose first transaction cannot
-/// be decoded are silently omitted; the builder poll falls back to
-/// on-demand decoding for those entries.
+/// Performs ECDSA recovery once at XT registration so later lifecycle steps
+/// do not need to repeat recovery for the first local transaction on a chain.
 pub fn build_sender_nonce_cache(
     txs: &HashMap<ChainId, Vec<Vec<u8>>>,
 ) -> HashMap<ChainId, (Address, u64)> {
@@ -55,35 +31,13 @@ pub fn build_sender_nonce_cache(
         .collect()
 }
 
-/// Look up an account's nonce from the builder's state overrides.
-pub fn sender_nonce_from_overrides(overrides: &StateOverride, sender: Address) -> Option<u64> {
-    overrides.get(&sender).and_then(|acct| acct.nonce)
-}
-
-/// Build transaction payloads for the builder from deliverable XTs.
-///
-/// This includes both the committed user transactions and any `putInbox`
-/// transactions for fulfilled CIRC dependencies.
-pub fn build_transaction_payloads(deliverable: &[DeliverableXt]) -> Vec<TransactionPayload> {
-    let mut payloads = Vec::new();
-
-    for entry in deliverable {
-        for put_inbox_tx in &entry.put_inbox_txs {
-            payloads.push(TransactionPayload {
-                raw: format!("0x{}", hex::encode(put_inbox_tx)),
-                required: true,
-                instance_id: entry.id.to_string(),
-            });
-        }
-
-        for raw_tx in &entry.raw_txs {
-            payloads.push(TransactionPayload {
-                raw: format!("0x{}", hex::encode(raw_tx)),
-                required: true,
-                instance_id: entry.id.to_string(),
-            });
-        }
-    }
-
-    payloads
+/// Filter dependencies to only those targeting the given chain.
+pub fn deps_for_chain(
+    deps: &[CrossRollupDependency],
+    chain_id: ChainId,
+) -> Vec<CrossRollupDependency> {
+    deps.iter()
+        .filter(|dep| dep.dest_chain_id == chain_id)
+        .cloned()
+        .collect()
 }

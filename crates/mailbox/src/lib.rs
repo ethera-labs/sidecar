@@ -4,7 +4,6 @@
 //! abstractions, and trace parsing.
 
 pub mod abi;
-pub mod builder;
 pub mod error;
 pub mod matching;
 pub mod overrides;

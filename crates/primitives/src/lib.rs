@@ -208,18 +208,6 @@ impl fmt::Display for XtStatus {
     }
 }
 
-/// Chain state snapshot from a builder poll.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ChainState {
-    pub chain_id: ChainId,
-    pub block_number: u64,
-    pub flashblock_index: u64,
-    pub state_root: B256,
-    pub timestamp: u64,
-    pub gas_limit: u64,
-    pub state_overrides: Option<StateOverride>,
-}
-
 /// A cross-rollup dependency (mailbox read).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CrossRollupDependency {
@@ -252,43 +240,6 @@ pub struct SimulationResult {
     pub state_overrides: Option<StateOverride>,
     pub dependencies: Vec<CrossRollupDependency>,
     pub outbound_messages: Vec<CrossRollupMessage>,
-}
-
-/// A single transaction payload returned to the builder.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TransactionPayload {
-    pub raw: String,
-    pub required: bool,
-    pub instance_id: String,
-}
-
-/// Builder poll request from op-rbuilder.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BuilderPollRequest {
-    pub chain_id: ChainId,
-    pub block_number: u64,
-    pub flashblock_index: u64,
-    pub state_root: B256,
-    pub timestamp: u64,
-    pub gas_limit: u64,
-    pub state_overrides: Option<StateOverride>,
-    /// Instance IDs of XTs the builder successfully executed in the previous
-    /// flashblock. The sidecar removes these from its pending set immediately,
-    /// implementing the "confirm back" step of the pull protocol.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub confirmed_instance_ids: Vec<String>,
-}
-
-/// Builder poll response to op-rbuilder.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BuilderPollResponse {
-    pub hold: bool,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub transactions: Vec<TransactionPayload>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub poll_after_ms: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub max_hold_ms: Option<u64>,
 }
 
 #[cfg(test)]

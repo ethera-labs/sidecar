@@ -6,9 +6,7 @@ use std::time::Duration;
 
 use compose_mailbox::traits::MailboxQueue;
 use compose_peer::traits::PeerCoordinator;
-use compose_primitives::{
-    ChainId, ChainState, InstanceId, PeriodId, SequenceNumber, SuperblockNumber,
-};
+use compose_primitives::{ChainId, InstanceId, PeriodId, SequenceNumber, SuperblockNumber};
 use compose_simulation::traits::Simulator;
 use prost::Message;
 use tokio::sync::{oneshot, Notify, RwLock};
@@ -17,7 +15,7 @@ use tracing::{error, info, warn};
 
 use compose_metrics::SidecarMetrics;
 use compose_primitives_traits::{
-    CoordinatorError, MailboxSender, PublisherClient, PutInboxBuilder,
+    CoordinatorError, MailboxSender, PublisherClient, PutInboxBuilder, XtBuilderClient,
 };
 use compose_proto::{wire_message::Payload, MailboxMessage};
 
@@ -28,13 +26,13 @@ use crate::nonce_manager::DeferredNonceManager;
 use crate::pipeline::delivery::build_sender_nonce_cache;
 use crate::pipeline::submission::{build_xt_request, xt_request_fingerprint};
 
-const DEFAULT_BUILDER_HOLD_POLL_MS: u64 = 10;
+type PendingSubmissionResult = Result<InstanceId, String>;
+type PendingSubmissionSender = oneshot::Sender<PendingSubmissionResult>;
 
 /// Shared coordinator state protected by a `RwLock`.
 #[derive(Debug)]
 pub(crate) struct CoordinatorState {
     pub pending: HashMap<InstanceId, PendingXt>,
-    pub chain_states: HashMap<ChainId, ChainState>,
     pub current_period_id: PeriodId,
     pub current_superblock_num: SuperblockNumber,
     pub period_initialized: bool,
@@ -42,8 +40,8 @@ pub(crate) struct CoordinatorState {
     pub last_known_blocks: HashMap<ChainId, u64>,
     /// Monotonic counter for locally-originated XTs in standalone mode.
     pub origin_seq: SequenceNumber,
-    /// Per-chain overlay of post-simulation state diffs for the current
-    /// block/flashblock window. Lets XT-B see the state produced by XT-A.
+    /// Per-chain overlay of post-simulation state diffs. Lets XT-B see the
+    /// state produced by XT-A within the current coordinator window.
     pub chain_overlay: HashMap<ChainId, ChainOverlay>,
     /// Notified whenever a mailbox message arrives, waking waiting simulations.
     pub mailbox_notify: Arc<Notify>,
@@ -51,7 +49,7 @@ pub(crate) struct CoordinatorState {
     pub submitted_fingerprints: HashMap<String, InstanceId>,
     /// Oneshot channels waiting for the publisher to assign an instance ID
     /// after an `XtRequest` is submitted. Keyed by fingerprint.
-    pub pending_submissions: HashMap<String, oneshot::Sender<InstanceId>>,
+    pub pending_submissions: HashMap<String, Vec<PendingSubmissionSender>>,
     /// Index from raw `instance_id` bytes → XT id for mailbox routing (O(1)).
     pub mailbox_index: HashMap<Vec<u8>, InstanceId>,
     /// Mailbox messages that arrived before the XT was registered (race buffer).
@@ -68,7 +66,6 @@ impl CoordinatorState {
     fn new() -> Self {
         Self {
             pending: HashMap::new(),
-            chain_states: HashMap::new(),
             current_period_id: PeriodId(0),
             current_superblock_num: SuperblockNumber(0),
             period_initialized: false,
@@ -82,18 +79,6 @@ impl CoordinatorState {
             mailbox_index: HashMap::new(),
             mailbox_buffer: HashMap::new(),
         }
-    }
-
-    /// Check if there is an active (undecided) instance with local chain transactions.
-    pub(crate) fn has_active_instance(&self, chain_id: ChainId) -> bool {
-        self.pending.values().any(|xt| {
-            xt.decision.is_none()
-                && xt
-                    .raw_txs
-                    .get(&chain_id)
-                    .map(|txs| !txs.is_empty())
-                    .unwrap_or(false)
-        })
     }
 
     /// Buffer a mailbox message for an XT that has not yet been registered.
@@ -129,8 +114,8 @@ pub struct DefaultCoordinator {
     pub(crate) mailbox_queue: Option<Arc<dyn MailboxQueue>>,
     pub(crate) peer_coordinator: Option<Arc<dyn PeerCoordinator>>,
     pub(crate) put_inbox_builder: Option<Arc<dyn PutInboxBuilder>>,
+    pub(crate) xt_builder_client: Option<Arc<dyn XtBuilderClient>>,
     pub(crate) circ_timeout_ms: u64,
-    pub(crate) builder_hold_poll_ms: u64,
     pub(crate) task_tracker: TaskTracker,
     pub(crate) metrics: Option<Arc<SidecarMetrics>>,
 }
@@ -140,7 +125,6 @@ impl std::fmt::Debug for DefaultCoordinator {
         f.debug_struct("DefaultCoordinator")
             .field("chain_id", &self.chain_id)
             .field("circ_timeout_ms", &self.circ_timeout_ms)
-            .field("builder_hold_poll_ms", &self.builder_hold_poll_ms)
             .finish()
     }
 }
@@ -154,7 +138,6 @@ impl DefaultCoordinator {
         mailbox_sender: Option<Arc<dyn MailboxSender>>,
         mailbox_queue: Option<Arc<dyn MailboxQueue>>,
         peer_coordinator: Option<Arc<dyn PeerCoordinator>>,
-        put_inbox_builder: Option<Arc<dyn PutInboxBuilder>>,
         circ_timeout_ms: u64,
     ) -> Self {
         Self {
@@ -166,9 +149,9 @@ impl DefaultCoordinator {
             mailbox_sender,
             mailbox_queue,
             peer_coordinator,
-            put_inbox_builder,
+            put_inbox_builder: None,
+            xt_builder_client: None,
             circ_timeout_ms,
-            builder_hold_poll_ms: DEFAULT_BUILDER_HOLD_POLL_MS,
             task_tracker: TaskTracker::new(),
             metrics: None,
         }
@@ -179,9 +162,14 @@ impl DefaultCoordinator {
         self.metrics = Some(metrics);
     }
 
-    /// Configure how long builders should wait before retrying after a hold.
-    pub fn set_builder_hold_poll_ms(&mut self, ms: u64) {
-        self.builder_hold_poll_ms = ms.max(1);
+    /// Attach a putInbox signer used for local dependency fulfillment.
+    pub fn set_put_inbox_builder(&mut self, builder: Arc<dyn PutInboxBuilder>) {
+        self.put_inbox_builder = Some(builder);
+    }
+
+    /// Attach a builder-control client for XT reservation lifecycle events.
+    pub fn set_xt_builder_client(&mut self, client: Arc<dyn XtBuilderClient>) {
+        self.xt_builder_client = Some(client);
     }
 
     /// Start the coordinator's background tasks (cleanup loop, etc.).
@@ -230,7 +218,10 @@ impl DefaultCoordinator {
             state.submitted_fingerprints.remove(&fp);
         }
         // Drop submission channels where the caller already timed out.
-        state.pending_submissions.retain(|_, tx| !tx.is_closed());
+        state.pending_submissions.retain(|_, waiters| {
+            waiters.retain(|tx| !tx.is_closed());
+            !waiters.is_empty()
+        });
         // Remove orphan mailbox_buffer entries whose XTs will never arrive.
         let orphan_keys: Vec<Vec<u8>> = state
             .mailbox_buffer
@@ -251,6 +242,31 @@ impl DefaultCoordinator {
         loop {
             interval.tick().await;
             self.cleanup(Duration::from_secs(300)).await;
+        }
+    }
+
+    pub(crate) async fn resolve_pending_submission(
+        &self,
+        fingerprint: &str,
+        result: PendingSubmissionResult,
+    ) {
+        let waiters = self
+            .state
+            .write()
+            .await
+            .pending_submissions
+            .remove(fingerprint);
+        if let Some(waiters) = waiters {
+            Self::notify_pending_submission_waiters(waiters, result);
+        }
+    }
+
+    pub(crate) fn notify_pending_submission_waiters(
+        waiters: Vec<PendingSubmissionSender>,
+        result: PendingSubmissionResult,
+    ) {
+        for waiter in waiters {
+            let _ = waiter.send(result.clone());
         }
     }
 
@@ -360,26 +376,31 @@ impl DefaultCoordinator {
         let xt_request = build_xt_request(&txs);
         let fingerprint = xt_request_fingerprint(&xt_request);
 
-        // Register a channel so handle_start_instance can resolve the
-        // publisher-assigned instance_id back to this caller.
         let (tx, rx) = oneshot::channel();
-        {
+        let should_send = {
             let mut state = self.state.write().await;
-            state.pending_submissions.insert(fingerprint.clone(), tx);
-        }
-
-        let wire = compose_proto::WireMessage {
-            sender_id: String::new(),
-            payload: Some(Payload::XtRequest(xt_request)),
+            let waiters = state
+                .pending_submissions
+                .entry(fingerprint.clone())
+                .or_default();
+            let should_send = waiters.is_empty();
+            waiters.push(tx);
+            should_send
         };
-        let data = wire.encode_to_vec();
 
-        if let Err(e) = publisher.send_raw(&data).await {
-            let mut state = self.state.write().await;
-            state.pending_submissions.remove(&fingerprint);
-            return Err(CoordinatorError::Other(format!(
-                "failed to send XT to publisher: {e}"
-            )));
+        if should_send {
+            let wire = compose_proto::WireMessage {
+                sender_id: String::new(),
+                payload: Some(Payload::XtRequest(xt_request)),
+            };
+            let data = wire.encode_to_vec();
+
+            if let Err(e) = publisher.send_raw(&data).await {
+                let message = format!("failed to send XT to publisher: {e}");
+                self.resolve_pending_submission(&fingerprint, Err(message.clone()))
+                    .await;
+                return Err(CoordinatorError::Other(message));
+            }
         }
 
         // Wait for the publisher to respond with StartInstance, which carries
@@ -392,8 +413,11 @@ impl DefaultCoordinator {
                 )
             })?
             .map_err(|_| {
-                CoordinatorError::Other("publisher submission channel dropped".to_string())
-            })?;
+                CoordinatorError::Other(
+                    "publisher submission resolution dropped unexpectedly".to_string(),
+                )
+            })?
+            .map_err(CoordinatorError::Other)?;
 
         info!(instance_id = %instance_id, "Submitted XT to publisher");
         Ok(instance_id.to_string())
@@ -409,7 +433,7 @@ impl DefaultCoordinator {
         let xt_request = build_xt_request(&txs);
         let fingerprint = xt_request_fingerprint(&xt_request);
 
-        let (instance_id, txs_for_forward) = {
+        let (instance_id, txs_for_forward, local_submission) = {
             let mut state = self.state.write().await;
 
             // Return the existing instance ID for duplicate submissions, as long
@@ -447,7 +471,7 @@ impl DefaultCoordinator {
             xt.origin_seq = seq;
             xt.sender_nonces = build_sender_nonce_cache(&txs);
             xt.raw_txs = txs;
-            // Pre-lock so builder_poll won't spawn a duplicate simulation.
+            // Pre-lock so only one local simulation task claims this XT.
             xt.locked_chains.insert(self.chain_id);
 
             state
@@ -455,8 +479,19 @@ impl DefaultCoordinator {
                 .insert(id.as_bytes().to_vec(), id.clone());
             state.pending.insert(id.clone(), xt);
             state.submitted_fingerprints.insert(fingerprint, id.clone());
-            (id, txs_for_forward)
+            let local_submission = state
+                .pending
+                .get(&id)
+                .and_then(|xt| self.local_builder_submission(xt));
+            (id, txs_for_forward, local_submission)
         }; // write lock released here
+
+        if let Some(submission) = local_submission {
+            if let Err(err) = self.submit_xt_to_builder(submission).await {
+                self.remove_pending_xt(&instance_id).await;
+                return Err(err);
+            }
+        }
 
         if let Some(m) = &self.metrics {
             m.xt_received_total.inc();
@@ -464,7 +499,7 @@ impl DefaultCoordinator {
         }
         info!(instance_id = %instance_id, "Submitted XT locally (standalone mode)");
 
-        // Start simulation immediately so it is ready before the builder polls.
+        // Start simulation immediately after local registration.
         {
             let coordinator = self.clone();
             let id = instance_id.clone();
@@ -502,29 +537,53 @@ impl DefaultCoordinator {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use async_trait::async_trait;
+    use std::collections::HashMap;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+    use tokio::time::sleep;
 
-    #[tokio::test]
-    async fn has_active_instance_returns_false_when_decided() {
-        let coordinator =
-            DefaultCoordinator::new(ChainId(77777), None, None, None, None, None, None, 1000);
+    #[derive(Debug, Default)]
+    struct MockPublisher {
+        send_raw_calls: AtomicUsize,
+    }
 
-        {
-            let mut state = coordinator.state.write().await;
-            let mut xt = PendingXt::new("xt-77777-1".to_string(), b"xt-77777-1".to_vec());
-            xt.raw_txs.insert(ChainId(77777), vec![vec![1]]);
-            xt.decision = Some(true);
-            xt.decided_at = Some(std::time::Instant::now());
-            state.pending.insert(xt.id.clone(), xt);
+    #[async_trait]
+    impl PublisherClient for MockPublisher {
+        async fn connect(&self) -> Result<(), CoordinatorError> {
+            Ok(())
         }
 
-        let state = coordinator.state.read().await;
-        assert!(!state.has_active_instance(ChainId(77777)));
+        async fn connect_with_retry(&self) -> Result<(), CoordinatorError> {
+            Ok(())
+        }
+
+        async fn disconnect(&self) -> Result<(), CoordinatorError> {
+            Ok(())
+        }
+
+        async fn send_vote(
+            &self,
+            _instance_id: &[u8],
+            _vote: bool,
+        ) -> Result<(), CoordinatorError> {
+            Ok(())
+        }
+
+        async fn send_raw(&self, _data: &[u8]) -> Result<(), CoordinatorError> {
+            self.send_raw_calls.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        }
+
+        fn is_connected(&self) -> bool {
+            true
+        }
     }
 
     #[tokio::test]
     async fn cleanup_removes_old_decided_xts() {
         let coordinator =
-            DefaultCoordinator::new(ChainId(77777), None, None, None, None, None, None, 1000);
+            DefaultCoordinator::new(ChainId(77777), None, None, None, None, None, 1000);
 
         {
             let mut state = coordinator.state.write().await;
@@ -543,5 +602,80 @@ mod tests {
 
         let state = coordinator.state.read().await;
         assert!(state.pending.is_empty());
+    }
+
+    #[tokio::test]
+    async fn submit_xt_publisher_joins_duplicate_waiters() {
+        let publisher = Arc::new(MockPublisher::default());
+        let coordinator = DefaultCoordinator::new(
+            ChainId(77777),
+            None,
+            Some(publisher.clone()),
+            None,
+            None,
+            None,
+            1000,
+        );
+
+        let mut txs = HashMap::new();
+        txs.insert(ChainId(77777), vec![vec![0x01, 0x02, 0x03]]);
+        let fingerprint = xt_request_fingerprint(&build_xt_request(&txs));
+
+        let coordinator_a = coordinator.clone();
+        let txs_a = txs.clone();
+        let first = tokio::spawn(async move { coordinator_a.submit_xt(txs_a).await });
+
+        let coordinator_b = coordinator.clone();
+        let txs_b = txs.clone();
+        let second = tokio::spawn(async move { coordinator_b.submit_xt(txs_b).await });
+
+        for _ in 0..50 {
+            let waiter_count = coordinator
+                .state
+                .read()
+                .await
+                .pending_submissions
+                .get(&fingerprint)
+                .map(Vec::len)
+                .unwrap_or_default();
+            if waiter_count == 2 {
+                break;
+            }
+            sleep(Duration::from_millis(10)).await;
+        }
+
+        assert_eq!(publisher.send_raw_calls.load(Ordering::SeqCst), 1);
+
+        coordinator
+            .resolve_pending_submission(&fingerprint, Ok(InstanceId::from("xt-77777-1")))
+            .await;
+
+        assert_eq!(first.await.unwrap().unwrap(), "xt-77777-1");
+        assert_eq!(second.await.unwrap().unwrap(), "xt-77777-1");
+    }
+
+    #[tokio::test]
+    async fn rollback_resolves_pending_submission_waiters() {
+        let coordinator =
+            DefaultCoordinator::new(ChainId(77777), None, None, None, None, None, 1000);
+        let (tx, rx) = oneshot::channel();
+
+        {
+            let mut state = coordinator.state.write().await;
+            state
+                .pending_submissions
+                .insert("fp-1".to_string(), vec![tx]);
+        }
+
+        coordinator
+            .handle_rollback(PeriodId(1), 5, b"hash")
+            .await
+            .unwrap();
+
+        let result = rx.await.unwrap();
+        assert_eq!(
+            result,
+            Err("publisher submission aborted by rollback".to_string())
+        );
     }
 }

@@ -1,28 +1,25 @@
-//! Per-chain state overlay tracking for simulation windows.
+//! Per-chain state overlay tracking for local XT simulation.
 
 use compose_primitives::StateOverride;
 
-/// Accumulated state overlay for a chain within a single block/flashblock
-/// window. Gives subsequent simulations the post-state of previously committed
-/// XTs.
+/// Accumulated state overlay for a chain. Gives subsequent simulations the
+/// post-state of previously committed local XTs until the overlay is cleared
+/// on period change or rollback.
 #[derive(Debug, Clone)]
 pub struct ChainOverlay {
-    pub block_number: u64,
-    pub flashblock_index: u64,
     pub overlay: StateOverride,
 }
 
+impl Default for ChainOverlay {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ChainOverlay {
-    pub fn new(block_number: u64, flashblock_index: u64) -> Self {
+    pub fn new() -> Self {
         Self {
-            block_number,
-            flashblock_index,
             overlay: StateOverride::default(),
         }
-    }
-
-    /// Whether this overlay matches the given block/flashblock window.
-    pub fn matches(&self, block_number: u64, flashblock_index: u64) -> bool {
-        self.block_number == block_number && self.flashblock_index == flashblock_index
     }
 }

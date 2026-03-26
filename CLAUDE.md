@@ -4,9 +4,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is **Compose Sidecar** — a cross-chain coordination layer for rollups. It manages cross-chain transaction (XT)
-lifecycles: from submission through simulation, peer voting, and committed delivery to builders. Sidecars communicate
-with each other over HTTP and with a shared publisher (SP) over QUIC.
+This is **Ethera Sidecar** — a cross-chain coordination layer for rollups. It manages cross-chain transaction (XT)
+lifecycles: from submission through simulation, peer voting, builder reservation control, and inclusion confirmation.
+Sidecars communicate with each other over HTTP, with the local builder over JSON-RPC/HTTP, and with a shared publisher
+(SP) over QUIC.
 
 ## Commands
 
@@ -56,21 +57,20 @@ The workspace contains one binary and many library crates, all prefixed `compose
 bin/sidecar              — binary entrypoint: wires up all crates and starts HTTP + QUIC
 crates/
   primitives             — shared data types (ChainId, XtRequest, PeriodId, etc.)
-  primitives-traits      — integration boundary traits (Simulator, MailboxSender, PutInboxBuilder, PublisherClient, CoordinatorError)
+  primitives-traits      — integration boundary traits and coordinator error types
   config                 — clap CLI args + env-var config (SIDECAR_* prefix)
   proto                  — protobuf wire types + conversions (prost, rollup_v2)
   coordinator/
-    coordinator          — core XT state machine: submission → simulation → voting → decision → delivery
+    coordinator          — core XT state machine: submission → simulation → voting → decision → builder sync
     server               — axum HTTP API (see routes below)
   net/
     transport            — QUIC client/server, TLS (quinn + rustls + rcgen), framing
     publisher            — wraps QuicClient for SP communication
     peer                 — HTTP client for sidecar-to-sidecar coordination
-  mailbox               — on-chain mailbox ABI encoding, dependency matching, putInbox queue
+  mailbox               — mailbox ABI helpers, dependency matching, overrides, and in-memory queue
   simulation             — RPC-backed tx simulation (eth_call with state overrides)
   metrics                — Prometheus counters/histograms via prometheus-client
   tracing                — tracing-subscriber init (JSON or pretty output)
-  adapters/put_inbox     — alloy-based putInbox transaction builder
 ```
 
 ### XT Lifecycle (coordinator pipeline)
@@ -80,7 +80,8 @@ crates/
    effects
 3. **Vote** (`handlers/peer_vote.rs`): peer sidecars exchange votes over HTTP (`POST /xt/vote`, `POST /xt/forward`)
 4. **Decide** (`decision/`): standalone (single sidecar) or consensus-based commit/abort
-5. **Deliver** (`POST /transactions`): builder polls for committed XTs
+5. **Reserve / Release**: sidecar pushes XT lifecycle events into the local builder
+6. **Confirm** (`POST /ethera/confirm`): builder confirms included XT instance IDs back to the sidecar
 
 ### HTTP API Routes
 
@@ -91,7 +92,7 @@ crates/
 | `POST /xt/forward`      | Peer forwarding                      |
 | `POST /xt/vote`         | Peer vote exchange                   |
 | `POST /mailbox`         | Peer mailbox messages                |
-| `POST /transactions`    | Builder poll (returns committed XTs) |
+| `POST /ethera/confirm`  | Builder inclusion confirmation       |
 | `GET /health`, `/ready` | Liveness/readiness                   |
 | `GET /metrics`          | Prometheus metrics                   |
 

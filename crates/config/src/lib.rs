@@ -5,15 +5,12 @@
 use clap::Parser;
 use compose_primitives::ChainId;
 
-/// Compose sidecar — cross-chain coordination layer.
+/// Ethera sidecar — cross-chain coordination layer.
 #[derive(Debug, Clone, Parser)]
 #[command(name = "sidecar")]
 pub struct SidecarArgs {
     #[command(flatten)]
     pub server: ServerArgs,
-
-    #[command(flatten)]
-    pub coordinator: CoordinatorArgs,
 
     #[command(flatten)]
     pub publisher: PublisherArgs,
@@ -26,18 +23,6 @@ pub struct SidecarArgs {
 
     #[command(flatten)]
     pub log: LogArgs,
-}
-
-/// Coordinator timing settings.
-#[derive(Debug, Clone, clap::Args)]
-pub struct CoordinatorArgs {
-    /// Milliseconds builders should wait before retrying after a hold response.
-    #[arg(
-        long = "coordinator.builder-hold-poll-ms",
-        env = "SIDECAR_BUILDER_HOLD_POLL_MS",
-        default_value = "10"
-    )]
-    pub builder_hold_poll_ms: u64,
 }
 
 /// HTTP server settings.
@@ -122,6 +107,15 @@ pub struct ChainArgs {
     #[arg(long = "chain.rpc", env = "SIDECAR_CHAIN_RPC", default_value = "")]
     pub rpc: String,
 
+    /// Builder RPC endpoint used for XT lifecycle control.
+    /// Falls back to `chain.rpc` when unset.
+    #[arg(
+        long = "chain.builder-rpc",
+        env = "SIDECAR_CHAIN_BUILDER_RPC",
+        default_value = ""
+    )]
+    pub builder_rpc: String,
+
     /// Mailbox contract address.
     #[arg(
         long = "chain.mailbox-address",
@@ -130,7 +124,7 @@ pub struct ChainArgs {
     )]
     pub mailbox_address: String,
 
-    /// Private key for signing putInbox transactions.
+    /// Private key for signing local `putInbox` transactions.
     #[arg(
         long = "chain.coordinator-key",
         env = "SIDECAR_COORDINATOR_KEY",
@@ -143,6 +137,15 @@ impl ChainArgs {
     /// Return the chain ID as a [`ChainId`].
     pub fn chain_id(&self) -> ChainId {
         ChainId(self.id)
+    }
+
+    /// Return the builder RPC endpoint, falling back to the chain RPC when unset.
+    pub fn builder_rpc_url(&self) -> &str {
+        if self.builder_rpc.is_empty() {
+            &self.rpc
+        } else {
+            &self.builder_rpc
+        }
     }
 }
 
@@ -241,7 +244,6 @@ mod tests {
     fn default_args_are_valid() {
         let args = SidecarArgs::parse_from(["sidecar"]);
         assert_eq!(args.server.listen_addr, "0.0.0.0:8080");
-        assert_eq!(args.coordinator.builder_hold_poll_ms, 10);
         assert!(!args.publisher.enabled);
         assert_eq!(args.chain.id, 0);
         assert_eq!(args.log.level, "info");
@@ -254,8 +256,6 @@ mod tests {
             "sidecar",
             "--server.listen-addr",
             "0.0.0.0:9090",
-            "--coordinator.builder-hold-poll-ms",
-            "7",
             "--chain.id",
             "77777",
             "--chain.rpc",
@@ -268,7 +268,6 @@ mod tests {
             "debug",
         ]);
         assert_eq!(args.server.listen_addr, "0.0.0.0:9090");
-        assert_eq!(args.coordinator.builder_hold_poll_ms, 7);
         assert_eq!(args.chain.id, 77777);
         assert_eq!(args.chain.rpc, "http://localhost:8545");
         assert!(args.publisher.enabled);
@@ -299,5 +298,11 @@ mod tests {
     fn no_peers_when_none_configured() {
         let args = SidecarArgs::parse_from(["sidecar"]);
         assert!(args.peers.to_entries().is_empty());
+    }
+
+    #[test]
+    fn builder_rpc_falls_back_to_chain_rpc() {
+        let args = SidecarArgs::parse_from(["sidecar", "--chain.rpc", "http://localhost:8545"]);
+        assert_eq!(args.chain.builder_rpc_url(), "http://localhost:8545");
     }
 }

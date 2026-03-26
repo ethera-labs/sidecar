@@ -68,7 +68,7 @@ pub struct PendingXt {
     /// Cached sender address and nonce per chain, derived from the first raw tx.
     ///
     /// Populated at registration to avoid repeated ECDSA recovery on every
-    /// builder poll. Builder poll falls back to on-demand recovery if absent.
+    /// builder lifecycle step. If recovery fails, the cache entry is omitted.
     pub sender_nonces: HashMap<ChainId, (Address, u64)>,
 }
 

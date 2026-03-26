@@ -1,7 +1,7 @@
 //! Start-period handling and period state transitions.
 
 use compose_primitives::{PeriodId, SuperblockNumber};
-use tracing::{error, info, warn};
+use tracing::{error, info};
 
 use crate::coordinator::DefaultCoordinator;
 use compose_primitives_traits::CoordinatorError;
@@ -15,15 +15,21 @@ impl DefaultCoordinator {
         period_id: PeriodId,
         superblock_num: SuperblockNumber,
     ) -> Result<(), CoordinatorError> {
-        let aborted_instance_ids: Vec<Vec<u8>> = {
+        let (aborted_instance_ids, builder_abort_ids): (Vec<Vec<u8>>, Vec<String>) = {
             let mut state = self.state.write().await;
 
             let mut aborted_ids = Vec::new();
+            let mut builder_abort_ids = Vec::new();
             for xt in state.pending.values_mut() {
                 if xt.decision.is_some() || xt.period_id.0 == 0 || xt.period_id >= period_id {
                     continue;
                 }
                 aborted_ids.push(xt.instance_id.clone());
+                if let Some(super::builder_control::XtBuilderCommand::Abort { instance_id }) =
+                    self.local_builder_command(xt, false)
+                {
+                    builder_abort_ids.push(instance_id);
+                }
                 xt.record_decision(false);
             }
 
@@ -41,23 +47,18 @@ impl DefaultCoordinator {
                 "Started new period"
             );
 
-            aborted_ids
+            (aborted_ids, builder_abort_ids)
         }; // write lock released before async operations
 
-        // Nonce resync and vote sending are async; they must run after the
-        // write lock is released to avoid holding it across await points.
-        if let Some(builder) = &self.put_inbox_builder {
-            let b = builder.clone();
-            if let Err(e) = self
-                .nonce_manager
-                .resync(move || {
-                    let b = b.clone();
-                    async move { b.pending_nonce_at().await }
-                })
-                .await
-            {
-                warn!(error = %e, "Failed to resync putInbox nonce on period change");
-            }
+        for instance_id in &builder_abort_ids {
+            self.apply_builder_command(super::builder_control::XtBuilderCommand::Abort {
+                instance_id: instance_id.clone(),
+            })
+            .await?;
+        }
+
+        if let Err(e) = self.resync_put_inbox_nonce().await {
+            error!(error = %e, "Failed to resync putInbox nonce on period change");
         }
 
         // Notify the publisher of the abort for each stale XT so it can
