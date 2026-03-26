@@ -3,7 +3,7 @@
 use alloy::eips::{BlockId, Encodable2718};
 use alloy::network::{EthereumWallet, TransactionBuilder};
 use alloy::primitives::{Address, U256};
-use alloy::providers::{Provider, ProviderBuilder};
+use alloy::providers::{DynProvider, Provider, ProviderBuilder};
 use alloy::rpc::types::TransactionRequest;
 use alloy::signers::local::PrivateKeySigner;
 use async_trait::async_trait;
@@ -16,7 +16,7 @@ use crate::abi;
 #[derive(Clone)]
 pub struct PutInboxTxBuilder {
     chain_id: ChainId,
-    rpc_url: String,
+    provider: DynProvider,
     mailbox_address: Address,
     signer: PrivateKeySigner,
     signer_address: Address,
@@ -52,10 +52,14 @@ impl PutInboxTxBuilder {
             .parse()
             .map_err(|e| CoordinatorError::Other(format!("invalid coordinator key: {e}")))?;
         let signer_address = signer.address();
+        let rpc_url = rpc_url
+            .parse()
+            .map_err(|e| CoordinatorError::Other(format!("invalid builder rpc url: {e}")))?;
+        let provider = ProviderBuilder::new().connect_http(rpc_url).erased();
 
         Ok(Self {
             chain_id,
-            rpc_url,
+            provider,
             mailbox_address,
             signer,
             signer_address,
@@ -70,13 +74,7 @@ impl PutInboxBuilder for PutInboxTxBuilder {
     }
 
     async fn pending_nonce_at(&self) -> Result<u64, CoordinatorError> {
-        let url = self
-            .rpc_url
-            .parse()
-            .map_err(|e| CoordinatorError::Other(format!("invalid builder rpc url: {e}")))?;
-        let provider = ProviderBuilder::new().connect_http(url);
-
-        provider
+        self.provider
             .get_transaction_count(self.signer_address)
             .block_id(BlockId::pending())
             .await
