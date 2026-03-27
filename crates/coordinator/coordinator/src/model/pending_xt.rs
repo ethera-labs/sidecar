@@ -31,6 +31,8 @@ pub struct PendingXt {
     pub simulated_at: Option<Instant>,
     /// When a decision was recorded.
     pub decided_at: Option<Instant>,
+    /// When the builder confirmed this XT was included in a block.
+    pub confirmed_at: Option<Instant>,
 
     /// Final commit/abort decision.
     pub decision: Option<bool>,
@@ -83,6 +85,7 @@ impl PendingXt {
             created_at: Instant::now(),
             simulated_at: None,
             decided_at: None,
+            confirmed_at: None,
             decision: None,
             vote_sent: false,
             local_vote: None,

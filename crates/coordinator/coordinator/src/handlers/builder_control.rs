@@ -182,8 +182,15 @@ impl DefaultCoordinator {
         &self,
         instance_ids: &[String],
     ) -> Result<(), CoordinatorError> {
+        let mut state = self.state.write().await;
+        let now = std::time::Instant::now();
         for instance_id in instance_ids {
-            info!(instance_id = %instance_id, "XT confirmed included by builder");
+            if let Some(xt) = state.pending.get_mut(instance_id.as_str()) {
+                xt.confirmed_at = Some(now);
+                info!(instance_id = %instance_id, "XT confirmed included by builder");
+            } else {
+                warn!(instance_id = %instance_id, "confirm received for unknown XT");
+            }
         }
         Ok(())
     }
