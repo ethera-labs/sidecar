@@ -132,8 +132,13 @@ impl SidecarMetrics {
             mailbox_wait_timeout_total.clone(),
         );
 
-        let put_inbox_build_duration_seconds =
-            Histogram::new([0.001, 0.005, 0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5].into_iter());
+        let put_inbox_build_duration_seconds = Histogram::new(
+            [
+                0.00025, 0.0005, 0.00075, 0.001, 0.0015, 0.002, 0.003, 0.004, 0.005, 0.0075, 0.01,
+                0.025, 0.05,
+            ]
+            .into_iter(),
+        );
         registry.register(
             "sidecar_put_inbox_build_duration_seconds",
             "Wall-clock time spent building each local putInbox transaction",
