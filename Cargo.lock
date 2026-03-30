@@ -1433,8 +1433,10 @@ dependencies = [
  "compose-mailbox",
  "compose-primitives",
  "reqwest",
+ "serde",
  "serde_json",
  "thiserror 2.0.18",
+ "tokio",
  "tracing",
 ]
 

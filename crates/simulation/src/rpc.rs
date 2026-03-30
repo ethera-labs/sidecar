@@ -4,22 +4,48 @@ use std::collections::HashMap;
 
 use alloy::consensus::transaction::SignerRecoverable;
 use alloy::consensus::{Transaction, TxEnvelope};
-use alloy::primitives::{Address, Bytes};
+use alloy::primitives::{Address, Bytes, U256};
 use alloy::rpc::types::eth::TransactionRequest;
-use alloy_rpc_types_eth::state::StateOverride;
+use alloy_rpc_types_eth::state::{AccountOverride, StateOverride};
 use alloy_rpc_types_trace::geth::{
-    CallConfig, GethDebugTracingCallOptions, GethDebugTracingOptions,
+    CallConfig, DiffMode, GethDebugTracingCallOptions, GethDebugTracingOptions, PreStateConfig,
+    PreStateFrame,
 };
 use async_trait::async_trait;
 use compose_mailbox::overrides::{build_mailbox_state_overrides, merge_overrides};
 use compose_primitives::{ChainId, CrossRollupDependency, CrossRollupMessage, SimulationResult};
 use reqwest::Client;
+use serde::de::DeserializeOwned;
+use serde::Deserialize;
 use serde_json::{json, Value};
-use tracing::{debug, trace};
+use tracing::{debug, trace, warn};
 
 use crate::error::SimulationError;
 use crate::traits::Simulator;
 use crate::types::ChainRpcConfig;
+
+#[derive(Debug, Deserialize)]
+struct JsonRpcResponse<T> {
+    result: Option<T>,
+    error: Option<JsonRpcError>,
+}
+
+#[derive(Debug, Deserialize)]
+struct JsonRpcError {
+    code: i64,
+    message: String,
+    #[serde(default)]
+    data: Option<Value>,
+}
+
+impl JsonRpcError {
+    fn into_message(self) -> String {
+        match self.data {
+            Some(data) => format!("code {}: {} ({data})", self.code, self.message),
+            None => format!("code {}: {}", self.code, self.message),
+        }
+    }
+}
 
 /// RPC-based simulator that uses `debug_traceCall` to simulate transactions
 /// and detect mailbox interactions.
@@ -81,17 +107,30 @@ impl RpcSimulator {
         Ok(tx_request)
     }
 
-    async fn trace_call(
+    fn call_tracer_options() -> GethDebugTracingOptions {
+        GethDebugTracingOptions::call_tracer(CallConfig::default().with_log())
+    }
+
+    fn prestate_tracer_options() -> GethDebugTracingOptions {
+        GethDebugTracingOptions::prestate_tracer(PreStateConfig {
+            diff_mode: Some(true),
+            ..Default::default()
+        })
+    }
+
+    async fn trace_call<T>(
         &self,
         chain_id: ChainId,
         tx_args: &TransactionRequest,
         state_overrides: &StateOverride,
-    ) -> Result<Value, SimulationError> {
+        tracing_opts: GethDebugTracingOptions,
+    ) -> Result<T, SimulationError>
+    where
+        T: DeserializeOwned,
+    {
         let url = self.rpc_url(chain_id)?;
 
-        let tracing_opts = GethDebugTracingOptions::call_tracer(CallConfig::default().with_log());
         let mut trace_opts = GethDebugTracingCallOptions::new(tracing_opts);
-
         if !state_overrides.is_empty() {
             trace_opts = trace_opts.with_state_overrides(state_overrides.clone());
         }
@@ -115,18 +154,113 @@ impl RpcSimulator {
             .await
             .map_err(|e| SimulationError::Rpc(e.to_string()))?;
 
-        let result: Value = resp
+        let result: JsonRpcResponse<T> = resp
             .json()
             .await
             .map_err(|e| SimulationError::Rpc(e.to_string()))?;
 
-        trace!(chain_id = %chain_id, result = %serde_json::to_string(&result).unwrap_or_default(), "debug_traceCall response");
+        trace!(chain_id = %chain_id, has_error = result.error.is_some(), "debug_traceCall response");
 
-        if let Some(err) = result.get("error") {
-            return Err(SimulationError::Rpc(err.to_string()));
+        if let Some(err) = result.error {
+            return Err(SimulationError::Rpc(err.into_message()));
         }
 
-        Ok(result.get("result").cloned().unwrap_or(Value::Null))
+        result
+            .result
+            .ok_or_else(|| SimulationError::Rpc("missing debug_traceCall result".to_string()))
+    }
+
+    fn trace_state_overrides(
+        trace: PreStateFrame,
+    ) -> Result<Option<StateOverride>, SimulationError> {
+        let PreStateFrame::Diff(diff) = trace else {
+            return Err(SimulationError::Other(
+                "prestate tracer returned non-diff response".to_string(),
+            ));
+        };
+
+        Ok(Self::state_overrides_from_diff(diff))
+    }
+
+    fn state_overrides_from_diff(diff: DiffMode) -> Option<StateOverride> {
+        let DiffMode { pre, post } = diff;
+        let mut overrides = StateOverride::default();
+
+        for (address, post_state) in &post {
+            let pre_state = pre.get(address);
+            let mut account = AccountOverride {
+                balance: post_state.balance,
+                nonce: post_state.nonce,
+                code: post_state.code.clone(),
+                ..Default::default()
+            };
+
+            let mut state_diff = post_state.storage.clone();
+            if let Some(pre_state) = pre_state {
+                for slot in pre_state.storage.keys() {
+                    if !post_state.storage.contains_key(slot) {
+                        state_diff.insert(*slot, alloy::primitives::B256::ZERO);
+                    }
+                }
+            }
+            if !state_diff.is_empty() {
+                account.state_diff = Some(state_diff.into_iter().collect());
+            }
+
+            if account.balance.is_some()
+                || account.nonce.is_some()
+                || account.code.is_some()
+                || account.state_diff.is_some()
+            {
+                overrides.insert(*address, account);
+            }
+        }
+
+        for address in pre.keys().filter(|address| !post.contains_key(*address)) {
+            overrides.insert(
+                *address,
+                AccountOverride {
+                    balance: Some(U256::ZERO),
+                    nonce: Some(0),
+                    code: Some(Bytes::new()),
+                    state: Some(Default::default()),
+                    ..Default::default()
+                },
+            );
+        }
+
+        if overrides.is_empty() {
+            None
+        } else {
+            Some(overrides)
+        }
+    }
+
+    fn optional_trace_state_overrides(
+        chain_id: ChainId,
+        trace_result: Result<PreStateFrame, SimulationError>,
+    ) -> Option<StateOverride> {
+        match trace_result {
+            Ok(trace) => match Self::trace_state_overrides(trace) {
+                Ok(overrides) => overrides,
+                Err(error) => {
+                    warn!(
+                        chain_id = %chain_id,
+                        error = %error,
+                        "Ignoring invalid prestate trace result"
+                    );
+                    None
+                }
+            },
+            Err(error) => {
+                warn!(
+                    chain_id = %chain_id,
+                    error = %error,
+                    "Ignoring prestate trace failure"
+                );
+                None
+            }
+        }
     }
 
     /// Convert parsed mailbox calls into cross-rollup dependencies and messages.
@@ -185,7 +319,21 @@ impl Simulator for RpcSimulator {
 
         debug!(chain_id = %chain_id, "Simulating transaction");
 
-        let trace = self.trace_call(chain_id, &tx_args, state_overrides).await?;
+        let (trace, prestate_trace) = tokio::join!(
+            self.trace_call::<Value>(
+                chain_id,
+                &tx_args,
+                state_overrides,
+                Self::call_tracer_options(),
+            ),
+            self.trace_call::<PreStateFrame>(
+                chain_id,
+                &tx_args,
+                state_overrides,
+                Self::prestate_tracer_options(),
+            ),
+        );
+        let trace = trace?;
 
         let success = trace
             .get("error")
@@ -199,10 +347,7 @@ impl Simulator for RpcSimulator {
 
         let (dependencies, outbound_messages) = self.extract_mailbox_data(&trace, chain_id);
 
-        // Parse stateOverrides returned by the trace into typed form.
-        let state_overrides_result = trace
-            .get("stateOverrides")
-            .and_then(|v| serde_json::from_value::<StateOverride>(v.clone()).ok());
+        let state_overrides_result = Self::optional_trace_state_overrides(chain_id, prestate_trace);
 
         Ok(SimulationResult {
             success,
@@ -236,5 +381,78 @@ impl Simulator for RpcSimulator {
         }
 
         self.simulate(chain_id, tx, &merged).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloy::primitives::B256;
+    use alloy_rpc_types_trace::geth::AccountState;
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn state_overrides_from_diff_preserves_cleared_slots_and_destroyed_accounts() {
+        let updated = Address::repeat_byte(0x11);
+        let created = Address::repeat_byte(0x22);
+        let destroyed = Address::repeat_byte(0x33);
+        let slot_a = B256::repeat_byte(0xaa);
+        let slot_b = B256::repeat_byte(0xbb);
+
+        let mut pre = BTreeMap::new();
+        pre.insert(
+            updated,
+            AccountState {
+                nonce: Some(1),
+                storage: BTreeMap::from([
+                    (slot_a, B256::repeat_byte(0x01)),
+                    (slot_b, B256::repeat_byte(0x02)),
+                ]),
+                ..Default::default()
+            },
+        );
+        pre.insert(
+            destroyed,
+            AccountState {
+                balance: Some(U256::from(7)),
+                nonce: Some(3),
+                storage: BTreeMap::from([(slot_a, B256::repeat_byte(0x03))]),
+                ..Default::default()
+            },
+        );
+
+        let mut post = BTreeMap::new();
+        post.insert(
+            updated,
+            AccountState {
+                nonce: Some(2),
+                storage: BTreeMap::from([(slot_b, B256::repeat_byte(0x04))]),
+                ..Default::default()
+            },
+        );
+        post.insert(
+            created,
+            AccountState {
+                balance: Some(U256::from(9)),
+                ..Default::default()
+            },
+        );
+
+        let overrides = RpcSimulator::state_overrides_from_diff(DiffMode { pre, post }).unwrap();
+
+        let updated_account = overrides.get(&updated).unwrap();
+        assert_eq!(updated_account.nonce, Some(2));
+        let updated_diff = updated_account.state_diff.as_ref().unwrap();
+        assert_eq!(updated_diff.get(&slot_a), Some(&B256::ZERO));
+        assert_eq!(updated_diff.get(&slot_b), Some(&B256::repeat_byte(0x04)));
+
+        let created_account = overrides.get(&created).unwrap();
+        assert_eq!(created_account.balance, Some(U256::from(9)));
+
+        let destroyed_account = overrides.get(&destroyed).unwrap();
+        assert_eq!(destroyed_account.balance, Some(U256::ZERO));
+        assert_eq!(destroyed_account.nonce, Some(0));
+        assert_eq!(destroyed_account.code, Some(Bytes::new()));
+        assert_eq!(destroyed_account.state.as_ref().unwrap().len(), 0);
     }
 }
