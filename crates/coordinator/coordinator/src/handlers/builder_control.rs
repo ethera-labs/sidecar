@@ -116,11 +116,29 @@ impl DefaultCoordinator {
         let mut nonce = start_nonce;
         let mut transactions = Vec::with_capacity(dependencies.len());
         for dependency in dependencies {
-            transactions.push(
-                builder
-                    .build_put_inbox_tx_with_nonce(dependency, nonce)
-                    .await?,
-            );
+            let build_started = std::time::Instant::now();
+            match builder
+                .build_put_inbox_tx_with_nonce(dependency, nonce)
+                .await
+            {
+                Ok(transaction) => {
+                    if let Some(metrics) = &self.metrics {
+                        metrics
+                            .put_inbox_build_duration_seconds
+                            .observe(build_started.elapsed().as_secs_f64());
+                    }
+                    transactions.push(transaction);
+                }
+                Err(error) => {
+                    if let Some(metrics) = &self.metrics {
+                        metrics
+                            .put_inbox_build_duration_seconds
+                            .observe(build_started.elapsed().as_secs_f64());
+                        metrics.put_inbox_build_error_total.inc();
+                    }
+                    return Err(error);
+                }
+            }
             nonce = nonce.saturating_add(1);
         }
 

@@ -1,7 +1,7 @@
 //! Signed `putInbox` transaction builder.
 
 use alloy::eips::{BlockId, Encodable2718};
-use alloy::network::{EthereumWallet, TransactionBuilder};
+use alloy::network::TransactionBuilder;
 use alloy::primitives::{Address, U256};
 use alloy::providers::{DynProvider, Provider, ProviderBuilder};
 use alloy::rpc::types::TransactionRequest;
@@ -9,6 +9,7 @@ use alloy::signers::local::PrivateKeySigner;
 use async_trait::async_trait;
 use compose_primitives::{ChainId, CrossRollupDependency};
 use compose_primitives_traits::{CoordinatorError, PutInboxBuilder};
+use reqwest::Url;
 
 use crate::abi;
 
@@ -16,6 +17,7 @@ use crate::abi;
 #[derive(Clone)]
 pub struct PutInboxTxBuilder {
     chain_id: ChainId,
+    rpc_url: String,
     provider: DynProvider,
     mailbox_address: Address,
     signer: PrivateKeySigner,
@@ -52,13 +54,16 @@ impl PutInboxTxBuilder {
             .parse()
             .map_err(|e| CoordinatorError::Other(format!("invalid coordinator key: {e}")))?;
         let signer_address = signer.address();
-        let rpc_url = rpc_url
+        let rpc_url: Url = rpc_url
             .parse()
             .map_err(|e| CoordinatorError::Other(format!("invalid builder rpc url: {e}")))?;
-        let provider = ProviderBuilder::new().connect_http(rpc_url).erased();
+        let provider = ProviderBuilder::new()
+            .connect_http(rpc_url.clone())
+            .erased();
 
         Ok(Self {
             chain_id,
+            rpc_url: rpc_url.to_string(),
             provider,
             mailbox_address,
             signer,
@@ -104,15 +109,26 @@ impl PutInboxBuilder for PutInboxTxBuilder {
             .with_chain_id(self.chain_id.0)
             .with_nonce(nonce)
             .gas_limit(500_000)
-            .max_priority_fee_per_gas(1_000_000_000)
-            .max_fee_per_gas(20_000_000_000)
             .with_input(calldata);
 
-        let wallet = EthereumWallet::new(self.signer.clone());
-        let signed = tx
-            .build(&wallet)
+        let rpc_url: Url = self
+            .rpc_url
+            .parse()
+            .map_err(|e| CoordinatorError::Other(format!("invalid builder rpc url: {e}")))?;
+        let provider = ProviderBuilder::new()
+            .wallet(self.signer.clone())
+            .connect_http(rpc_url);
+        let signed = provider
+            .fill(tx)
             .await
-            .map_err(|e| CoordinatorError::Other(format!("build signed putInbox tx: {e}")))?;
+            .map_err(|e| CoordinatorError::Other(format!("fill putInbox tx: {e}")))?
+            .try_into_envelope()
+            .map_err(|e| {
+                CoordinatorError::Other(format!(
+                    "fill putInbox tx returned unsigned transaction: {:?}",
+                    e.into_inner()
+                ))
+            })?;
 
         Ok(signed.encoded_2718())
     }

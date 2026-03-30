@@ -32,6 +32,10 @@ pub struct SidecarMetrics {
     pub simulation_error_total: Counter<u64>,
     /// Mailbox waits that hit the CIRC timeout before any dependency arrived.
     pub mailbox_wait_timeout_total: Counter<u64>,
+    /// Wall-clock time spent building each local `putInbox` transaction.
+    pub put_inbox_build_duration_seconds: Histogram,
+    /// Failures while building local `putInbox` transactions.
+    pub put_inbox_build_error_total: Counter<u64>,
     /// `StartInstance` messages rejected (stale period, active instance, etc.).
     pub xt_rejected_total: Counter<u64>,
     /// Current number of orphan mailbox buffer entries.
@@ -128,6 +132,21 @@ impl SidecarMetrics {
             mailbox_wait_timeout_total.clone(),
         );
 
+        let put_inbox_build_duration_seconds =
+            Histogram::new([0.001, 0.005, 0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5].into_iter());
+        registry.register(
+            "sidecar_put_inbox_build_duration_seconds",
+            "Wall-clock time spent building each local putInbox transaction",
+            put_inbox_build_duration_seconds.clone(),
+        );
+
+        let put_inbox_build_error_total = Counter::default();
+        registry.register(
+            "sidecar_put_inbox_build_error",
+            "Failures while building local putInbox transactions",
+            put_inbox_build_error_total.clone(),
+        );
+
         let xt_rejected_total = Counter::default();
         registry.register(
             "sidecar_xt_rejected",
@@ -155,6 +174,8 @@ impl SidecarMetrics {
             vote_send_failed_total,
             simulation_error_total,
             mailbox_wait_timeout_total,
+            put_inbox_build_duration_seconds,
+            put_inbox_build_error_total,
             xt_rejected_total,
             mailbox_buffer_size,
         }
