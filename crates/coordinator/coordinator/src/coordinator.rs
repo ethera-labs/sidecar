@@ -197,8 +197,9 @@ impl DefaultCoordinator {
         let mut state = self.state.write().await;
         let now = std::time::Instant::now();
         state.pending.retain(|_id, xt| {
-            if let Some(decided_at) = xt.decided_at {
-                now.duration_since(decided_at) <= max_age
+            let age_ref = xt.confirmed_at.or(xt.decided_at);
+            if let Some(t) = age_ref {
+                now.duration_since(t) <= max_age
             } else {
                 true
             }
@@ -588,7 +589,6 @@ mod tests {
         {
             let mut state = coordinator.state.write().await;
             let mut xt = PendingXt::new("xt-77777-1".to_string(), b"xt-77777-1".to_vec());
-            // Simulate a decision that happened a long time ago.
             xt.decision = Some(true);
             xt.decided_at = Some(
                 std::time::Instant::now()
@@ -602,6 +602,56 @@ mod tests {
 
         let state = coordinator.state.read().await;
         assert!(state.pending.is_empty());
+    }
+
+    #[tokio::test]
+    async fn cleanup_removes_old_confirmed_xts() {
+        let coordinator =
+            DefaultCoordinator::new(ChainId(77777), None, None, None, None, None, 1000);
+
+        {
+            let mut state = coordinator.state.write().await;
+            let mut xt = PendingXt::new("xt-77777-2".to_string(), b"xt-77777-2".to_vec());
+            xt.decision = Some(true);
+            xt.decided_at = Some(std::time::Instant::now());
+            // confirmed_at is the age reference when set; simulate old confirmation.
+            xt.confirmed_at = Some(
+                std::time::Instant::now()
+                    .checked_sub(Duration::from_secs(400))
+                    .unwrap(),
+            );
+            state.pending.insert(xt.id.clone(), xt);
+        }
+
+        coordinator.cleanup(Duration::from_secs(300)).await;
+
+        let state = coordinator.state.read().await;
+        assert!(state.pending.is_empty());
+    }
+
+    #[tokio::test]
+    async fn cleanup_retains_recently_confirmed_xts() {
+        let coordinator =
+            DefaultCoordinator::new(ChainId(77777), None, None, None, None, None, 1000);
+
+        {
+            let mut state = coordinator.state.write().await;
+            let mut xt = PendingXt::new("xt-77777-3".to_string(), b"xt-77777-3".to_vec());
+            xt.decision = Some(true);
+            xt.decided_at = Some(
+                std::time::Instant::now()
+                    .checked_sub(Duration::from_secs(400))
+                    .unwrap(),
+            );
+            // decided_at is old but confirmed_at is recent — should be retained.
+            xt.confirmed_at = Some(std::time::Instant::now());
+            state.pending.insert(xt.id.clone(), xt);
+        }
+
+        coordinator.cleanup(Duration::from_secs(300)).await;
+
+        let state = coordinator.state.read().await;
+        assert_eq!(state.pending.len(), 1);
     }
 
     #[tokio::test]
