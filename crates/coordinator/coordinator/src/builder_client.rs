@@ -11,7 +11,7 @@ use compose_primitives_traits::{CoordinatorError, XtBuilderClient};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
-const BUILDER_RPC_TIMEOUT: Duration = Duration::from_millis(500);
+const BUILDER_RPC_TIMEOUT: Duration = Duration::from_secs(2);
 
 #[derive(Debug, Serialize)]
 struct SubmitXtRequest {
