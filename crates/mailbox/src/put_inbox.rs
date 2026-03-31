@@ -86,6 +86,14 @@ impl PutInboxBuilder for PutInboxTxBuilder {
             .map_err(|e| CoordinatorError::Nonce(format!("get pending nonce: {e}")))
     }
 
+    async fn canonical_nonce_at(&self) -> Result<u64, CoordinatorError> {
+        self.provider
+            .get_transaction_count(self.signer_address)
+            .block_id(BlockId::latest())
+            .await
+            .map_err(|e| CoordinatorError::Nonce(format!("get latest nonce: {e}")))
+    }
+
     async fn build_put_inbox_tx_with_nonce(
         &self,
         dep: &CrossRollupDependency,

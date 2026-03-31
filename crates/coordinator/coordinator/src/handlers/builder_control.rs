@@ -109,7 +109,7 @@ impl DefaultCoordinator {
             .nonce_manager
             .reserve(dependencies.len(), move || {
                 let builder = nonce_builder.clone();
-                async move { builder.pending_nonce_at().await }
+                async move { builder.canonical_nonce_at().await }
             })
             .await?;
 
@@ -153,7 +153,7 @@ impl DefaultCoordinator {
         self.nonce_manager
             .resync(move || {
                 let builder = builder.clone();
-                async move { builder.pending_nonce_at().await }
+                async move { builder.canonical_nonce_at().await }
             })
             .await
     }
@@ -234,7 +234,41 @@ impl DefaultCoordinator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use compose_primitives::{ChainId, PeriodId, SequenceNumber};
+    use alloy::primitives::{Address, U256};
+    use async_trait::async_trait;
+    use compose_primitives::{ChainId, CrossRollupDependency, PeriodId, SequenceNumber};
+    use std::sync::{Arc, Mutex};
+
+    #[derive(Debug)]
+    struct TestPutInboxBuilder {
+        latest_nonce: u64,
+        pending_nonce: u64,
+        used_nonces: Mutex<Vec<u64>>,
+    }
+
+    #[async_trait]
+    impl compose_primitives_traits::PutInboxBuilder for TestPutInboxBuilder {
+        fn signer_address(&self) -> Address {
+            Address::ZERO
+        }
+
+        async fn pending_nonce_at(&self) -> Result<u64, CoordinatorError> {
+            Ok(self.pending_nonce)
+        }
+
+        async fn canonical_nonce_at(&self) -> Result<u64, CoordinatorError> {
+            Ok(self.latest_nonce)
+        }
+
+        async fn build_put_inbox_tx_with_nonce(
+            &self,
+            _dep: &CrossRollupDependency,
+            nonce: u64,
+        ) -> Result<Vec<u8>, CoordinatorError> {
+            self.used_nonces.lock().unwrap().push(nonce);
+            Ok(vec![nonce as u8])
+        }
+    }
 
     #[tokio::test]
     async fn confirm_included_xts_keeps_pending_for_status_polling() {
@@ -282,5 +316,46 @@ mod tests {
         assert_eq!(submission.period_id, 11);
         assert_eq!(submission.sequence_number, 7);
         assert_eq!(submission.transactions.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn build_put_inbox_transactions_uses_latest_nonce_not_pending_nonce() {
+        let mut coordinator =
+            DefaultCoordinator::new(ChainId(77777), None, None, None, None, None, 1000);
+        let builder = Arc::new(TestPutInboxBuilder {
+            latest_nonce: 7,
+            pending_nonce: 12,
+            used_nonces: Mutex::new(Vec::new()),
+        });
+        coordinator.set_put_inbox_builder(builder.clone());
+
+        let deps = vec![
+            CrossRollupDependency {
+                source_chain_id: ChainId(77777),
+                dest_chain_id: ChainId(88888),
+                sender: Address::repeat_byte(0x11),
+                receiver: Address::repeat_byte(0x22),
+                label: b"SEND".to_vec(),
+                data: None,
+                session_id: Some(U256::from(1)),
+            },
+            CrossRollupDependency {
+                source_chain_id: ChainId(77777),
+                dest_chain_id: ChainId(88888),
+                sender: Address::repeat_byte(0x11),
+                receiver: Address::repeat_byte(0x22),
+                label: b"SEND".to_vec(),
+                data: None,
+                session_id: Some(U256::from(2)),
+            },
+        ];
+
+        let txs = coordinator
+            .build_put_inbox_transactions(&deps)
+            .await
+            .unwrap();
+
+        assert_eq!(txs, vec![vec![7], vec![8]]);
+        assert_eq!(*builder.used_nonces.lock().unwrap(), vec![7, 8]);
     }
 }

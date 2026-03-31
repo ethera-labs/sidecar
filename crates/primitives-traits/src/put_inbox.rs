@@ -15,6 +15,16 @@ pub trait PutInboxBuilder: Send + Sync + 'static {
     /// Return the builder's current pending nonce for the coordinator signer.
     async fn pending_nonce_at(&self) -> Result<u64, CoordinatorError>;
 
+    /// Return the coordinator signer's canonical on-chain nonce from the
+    /// builder's RPC view.
+    ///
+    /// Sidecar uses this as the base for reserving new `putInbox` nonces so
+    /// stale builder-local reservations do not push future transactions ahead
+    /// of the chain. Older implementors can rely on the pending fallback.
+    async fn canonical_nonce_at(&self) -> Result<u64, CoordinatorError> {
+        self.pending_nonce_at().await
+    }
+
     /// Build a signed `putInbox` transaction with the provided nonce.
     async fn build_put_inbox_tx_with_nonce(
         &self,
