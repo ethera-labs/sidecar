@@ -12,8 +12,8 @@ pub trait PutInboxBuilder: Send + Sync + 'static {
     /// Address of the coordinator signer used for `putInbox`.
     fn signer_address(&self) -> Address;
 
-    /// Return the builder's current pending nonce for the coordinator signer.
-    async fn pending_nonce_at(&self) -> Result<u64, CoordinatorError>;
+    /// Return the coordinator signer's canonical on-chain nonce.
+    async fn canonical_nonce_at(&self) -> Result<u64, CoordinatorError>;
 
     /// Build a signed `putInbox` transaction with the provided nonce.
     async fn build_put_inbox_tx_with_nonce(
