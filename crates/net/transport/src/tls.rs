@@ -22,8 +22,7 @@ pub fn generate_self_signed(
     Ok((vec![cert_der], key_der))
 }
 
-/// ALPN protocol identifier for publisher ↔ sidecar QUIC connections.
-const ALPN_COMPOSE_QUIC: &[u8] = b"compose-quic";
+const ALPN_ETHERA_QUIC: &[u8] = b"ethera-quic";
 
 /// Build a `rustls::ClientConfig` that accepts any server certificate.
 ///
@@ -34,7 +33,7 @@ pub fn insecure_client_config() -> Result<Arc<rustls::ClientConfig>, TransportEr
         .dangerous()
         .with_custom_certificate_verifier(Arc::new(NoVerifier))
         .with_no_client_auth();
-    config.alpn_protocols = vec![ALPN_COMPOSE_QUIC.to_vec()];
+    config.alpn_protocols = vec![ALPN_ETHERA_QUIC.to_vec()];
     Ok(Arc::new(config))
 }
 
