@@ -10,7 +10,6 @@ pub mod handlers;
 pub mod model;
 mod nonce_manager;
 pub mod pipeline;
-pub mod traits;
 
 pub use compose_primitives_traits::{
     CoordinatorError, MailboxSender, PublisherClient, PutInboxBuilder, XtBuilderClient,
