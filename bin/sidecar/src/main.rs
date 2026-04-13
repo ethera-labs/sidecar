@@ -8,7 +8,7 @@ use clap::Parser;
 use compose_config::SidecarArgs;
 use compose_coordinator::builder::CoordinatorBuilder;
 use compose_coordinator::builder_client::HttpXtBuilderClient;
-use compose_coordinator::coordinator::DefaultCoordinator;
+use compose_coordinator::coordinator::{DefaultCoordinator, VerificationConfig};
 use compose_mailbox::put_inbox::PutInboxTxBuilder;
 use compose_mailbox::queue::InMemoryQueue;
 use compose_metrics::SidecarMetrics;
@@ -122,6 +122,12 @@ fn build_coordinator(
     }
 
     builder = builder.mailbox_queue(Arc::new(InMemoryQueue::new()));
+
+    builder = builder.verification_config(VerificationConfig {
+        enabled: args.verification.enabled,
+        url: args.verification.url.clone(),
+        timeout_ms: args.verification.timeout_ms,
+    });
 
     let peer_entries = args.peers.to_entries();
     if !peer_entries.is_empty() {

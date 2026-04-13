@@ -232,7 +232,7 @@ mod tests {
     use compose_primitives::{ChainId, PeriodId};
     use compose_proto::{StartInstance, TransactionRequest, XtRequest};
 
-    use crate::coordinator::DefaultCoordinator;
+    use crate::coordinator::{DefaultCoordinator, VerificationConfig};
 
     fn start_instance(sequence_number: u64) -> StartInstance {
         StartInstance {
@@ -250,8 +250,16 @@ mod tests {
 
     #[tokio::test]
     async fn handle_start_instance_allows_multiple_local_xts() {
-        let coordinator =
-            DefaultCoordinator::new(ChainId(77777), None, None, None, None, None, 1000);
+        let coordinator = DefaultCoordinator::new(
+            ChainId(77777),
+            None,
+            None,
+            None,
+            None,
+            None,
+            1000,
+            VerificationConfig::default(),
+        );
 
         {
             let mut state = coordinator.state.write().await;

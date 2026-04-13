@@ -10,7 +10,7 @@ use compose_simulation::traits::Simulator;
 use compose_metrics::SidecarMetrics;
 use compose_primitives_traits::{MailboxSender, PublisherClient, PutInboxBuilder, XtBuilderClient};
 
-use crate::coordinator::DefaultCoordinator;
+use crate::coordinator::{DefaultCoordinator, VerificationConfig};
 
 /// Builder for constructing a [`DefaultCoordinator`] with all its dependencies.
 pub struct CoordinatorBuilder {
@@ -24,6 +24,7 @@ pub struct CoordinatorBuilder {
     xt_builder_client: Option<Arc<dyn XtBuilderClient>>,
     metrics: Option<Arc<SidecarMetrics>>,
     circ_timeout_ms: u64,
+    verification: VerificationConfig,
 }
 
 impl std::fmt::Debug for CoordinatorBuilder {
@@ -48,6 +49,7 @@ impl CoordinatorBuilder {
             xt_builder_client: None,
             metrics: None,
             circ_timeout_ms: 10_000,
+            verification: VerificationConfig::default(),
         }
     }
 
@@ -96,6 +98,11 @@ impl CoordinatorBuilder {
         self
     }
 
+    pub fn verification_config(mut self, cfg: VerificationConfig) -> Self {
+        self.verification = cfg;
+        self
+    }
+
     pub fn build(self) -> DefaultCoordinator {
         let mut coord = DefaultCoordinator::new(
             self.chain_id,
@@ -105,6 +112,7 @@ impl CoordinatorBuilder {
             self.mailbox_queue,
             self.peer_coordinator,
             self.circ_timeout_ms,
+            self.verification,
         );
         if let Some(builder) = self.put_inbox_builder {
             coord.set_put_inbox_builder(builder);

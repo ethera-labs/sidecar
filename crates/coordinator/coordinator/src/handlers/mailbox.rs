@@ -69,15 +69,23 @@ mod tests {
     use compose_primitives::ChainId;
     use compose_proto::MailboxMessage;
 
-    use crate::coordinator::DefaultCoordinator;
+    use crate::coordinator::{DefaultCoordinator, VerificationConfig};
     use crate::model::pending_xt::PendingXt;
 
     #[tokio::test]
     async fn mailbox_message_buffered_when_xt_not_yet_registered() {
         // Reproduce the race where the mailbox message arrives before the
         // forwarded XT is registered in mailbox_index.
-        let coordinator =
-            DefaultCoordinator::new(ChainId(88888), None, None, None, None, None, 1_000);
+        let coordinator = DefaultCoordinator::new(
+            ChainId(88888),
+            None,
+            None,
+            None,
+            None,
+            None,
+            1_000,
+            VerificationConfig::default(),
+        );
 
         let instance_id = "xt-77777-2".to_string();
 
@@ -127,8 +135,16 @@ mod tests {
 
     #[tokio::test]
     async fn mailbox_message_attaches_to_pending_xt_by_raw_instance_id() {
-        let coordinator =
-            DefaultCoordinator::new(ChainId(88888), None, None, None, None, None, 1_000);
+        let coordinator = DefaultCoordinator::new(
+            ChainId(88888),
+            None,
+            None,
+            None,
+            None,
+            None,
+            1_000,
+            VerificationConfig::default(),
+        );
 
         let instance_id = "xt-77777-1".to_string();
         let xt = PendingXt::new(instance_id.clone(), instance_id.as_bytes().to_vec());
