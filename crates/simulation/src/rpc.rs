@@ -197,6 +197,10 @@ impl RpcSimulator {
 
             let mut state_diff = post_state.storage.clone();
             if let Some(pre_state) = pre_state {
+                // Slots present in the pre-state but absent from the post-state
+                // were cleared by the transaction. We must explicitly set them to
+                // ZERO in the override so that subsequent simulations see the
+                // cleared value rather than the original on-chain state.
                 for slot in pre_state.storage.keys() {
                     if !post_state.storage.contains_key(slot) {
                         state_diff.insert(*slot, alloy::primitives::B256::ZERO);

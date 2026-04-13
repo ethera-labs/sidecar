@@ -92,6 +92,20 @@ fn apply_bytes_to_state_diff(state_diff: &mut SlotMap, slot: B256, data: &[u8]) 
     }
 }
 
+/// Compute the keccak256 storage key for a mailbox inbox entry.
+///
+/// The preimage layout matches the Solidity mailbox contract's key derivation:
+///
+/// ```text
+///   offset  bytes  field
+///   ──────  ─────  ─────────────────────────
+///    0      32     source_chain_id  (uint256)
+///   32      32     dest_chain_id    (uint256, = chain_id)
+///   64      20     sender           (address)
+///   84      20     receiver         (address)
+///  104      32     session_id       (uint256)
+///  136      var    label            (raw bytes)
+/// ```
 fn mailbox_key(chain_id: ChainId, dep: &CrossRollupDependency) -> Option<B256> {
     let session_id = dep.session_id?;
     let mut preimage = Vec::with_capacity(32 + 32 + 20 + 20 + 32 + dep.label.len());
