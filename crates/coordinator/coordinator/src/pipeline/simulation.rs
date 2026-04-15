@@ -6,6 +6,7 @@ use compose_mailbox::matching::{contains_message, dep_key, matches_dependency};
 use compose_mailbox::overrides::merge_overrides;
 use compose_primitives::{ChainId, CrossRollupDependency, CrossRollupMessage, StateOverride};
 use compose_proto::MailboxMessage;
+use serde::Serialize;
 use tokio::time::{sleep_until, Instant};
 use tracing::{debug, error, info, warn};
 
@@ -23,6 +24,14 @@ fn mailbox_message_key(msg: &MailboxMessage) -> String {
         hex::encode(&msg.receiver),
         msg.label,
     )
+}
+
+#[derive(Debug, Serialize)]
+struct VerificationPayload<'a> {
+    instance_id: &'a str,
+    dest_chain_id: u64,
+    origin_chain_id: Option<u64>,
+    txs: Vec<String>,
 }
 
 impl DefaultCoordinator {
@@ -70,6 +79,12 @@ impl DefaultCoordinator {
                 }
             }
         };
+
+        if let Err(err) = self.verify_xt(instance_id, &tx_bytes_list).await {
+            warn!(instance_id, error = %err, "Verification hook rejected XT");
+            let _ = self.send_vote(instance_id, false).await;
+            return;
+        }
 
         // Lock the local chain.
         {
@@ -215,7 +230,58 @@ impl DefaultCoordinator {
             }
         }
 
+        // Verification hook already run before simulation.
         let _ = self.send_vote(instance_id, true).await;
+    }
+
+    async fn verify_xt(&self, instance_id: &str, txs: &[Vec<u8>]) -> Result<(), String> {
+        if !self.verification.enabled {
+            return Ok(());
+        }
+
+        let origin_chain = {
+            let state = self.state.read().await;
+            state
+                .pending
+                .get(instance_id)
+                .and_then(|xt| xt.origin_chain)
+        };
+
+        let payload = VerificationPayload {
+            instance_id,
+            dest_chain_id: self.chain_id.0,
+            origin_chain_id: origin_chain.map(|cid| cid.0),
+            txs: txs.iter().map(hex::encode).collect(),
+        };
+
+        let client = self
+            .verification_client
+            .as_ref()
+            .ok_or_else(|| "verification client not configured".to_string())?;
+
+        let response = client
+            .post(&self.verification.url)
+            .json(&payload)
+            .send()
+            .await
+            .map_err(|e| format!("verification request failed: {e}"))?;
+
+        if !response.status().is_success() {
+            return Err(format!(
+                "verification rejected with status {}",
+                response.status()
+            ));
+        }
+
+        debug!(
+            instance_id,
+            url = %self.verification.url,
+            timeout_ms = self.verification.timeout_ms,
+            ?payload,
+            "Verification hook approved XT"
+        );
+
+        Ok(())
     }
 
     /// Record simulation results into XT state, update the chain overlay with
@@ -532,6 +598,7 @@ mod tests {
     use alloy::primitives::Address;
     use alloy_rpc_types_eth::state::AccountOverride;
     use async_trait::async_trait;
+    use axum::{extract::State, http::StatusCode, routing::post, Router};
     use compose_primitives::ChainId;
     use compose_primitives::StateOverride;
     use compose_primitives::{CrossRollupDependency, SimulationResult};
@@ -539,15 +606,79 @@ mod tests {
     use compose_simulation::traits::Simulator;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::{Arc, Mutex};
+    use tokio::{net::TcpListener, task::JoinHandle};
 
-    use crate::coordinator::DefaultCoordinator;
+    use crate::coordinator::{DefaultCoordinator, VerificationConfig};
     use crate::model::chain_overlay::ChainOverlay;
     use crate::model::pending_xt::PendingXt;
 
+    #[derive(Clone)]
+    struct VerificationServerState {
+        hits: Arc<AtomicUsize>,
+        status: StatusCode,
+        body: &'static str,
+    }
+
+    struct TestVerificationServer {
+        hits: Arc<AtomicUsize>,
+        task: JoinHandle<()>,
+        url: String,
+    }
+
+    impl TestVerificationServer {
+        async fn spawn(status: StatusCode, body: &'static str) -> Self {
+            let hits = Arc::new(AtomicUsize::new(0));
+            let app = Router::new()
+                .route("/verify", post(test_verification_handler))
+                .with_state(VerificationServerState {
+                    hits: hits.clone(),
+                    status,
+                    body,
+                });
+
+            let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let addr = listener.local_addr().unwrap();
+            let task = tokio::spawn(async move {
+                axum::serve(listener, app).await.unwrap();
+            });
+
+            Self {
+                hits,
+                task,
+                url: format!("http://{addr}/verify"),
+            }
+        }
+
+        fn assert_hits(&self, expected: usize) {
+            assert_eq!(self.hits.load(Ordering::SeqCst), expected);
+        }
+    }
+
+    impl Drop for TestVerificationServer {
+        fn drop(&mut self) {
+            self.task.abort();
+        }
+    }
+
+    async fn test_verification_handler(
+        State(state): State<VerificationServerState>,
+    ) -> (StatusCode, &'static str) {
+        state.hits.fetch_add(1, Ordering::SeqCst);
+        (state.status, state.body)
+    }
+
     #[tokio::test]
     async fn send_vote_does_not_overwrite_existing_local_vote() {
-        let coordinator =
-            DefaultCoordinator::new(ChainId(77777), None, None, None, None, None, 1000);
+        let coordinator = DefaultCoordinator::new(
+            ChainId(77777),
+            None,
+            None,
+            None,
+            None,
+            None,
+            1000,
+            VerificationConfig::default(),
+        );
 
         {
             let mut state = coordinator.state.write().await;
@@ -565,8 +696,16 @@ mod tests {
 
     #[tokio::test]
     async fn send_vote_decides_when_peer_vote_already_present() {
-        let coordinator =
-            DefaultCoordinator::new(ChainId(77777), None, None, None, None, None, 1000);
+        let coordinator = DefaultCoordinator::new(
+            ChainId(77777),
+            None,
+            None,
+            None,
+            None,
+            None,
+            1000,
+            VerificationConfig::default(),
+        );
 
         {
             let mut state = coordinator.state.write().await;
@@ -587,8 +726,16 @@ mod tests {
 
     #[tokio::test]
     async fn send_vote_applies_existing_abort_peer_vote() {
-        let coordinator =
-            DefaultCoordinator::new(ChainId(77777), None, None, None, None, None, 1000);
+        let coordinator = DefaultCoordinator::new(
+            ChainId(77777),
+            None,
+            None,
+            None,
+            None,
+            None,
+            1000,
+            VerificationConfig::default(),
+        );
 
         {
             let mut state = coordinator.state.write().await;
@@ -715,6 +862,7 @@ mod tests {
             None,
             None,
             1000,
+            VerificationConfig::default(),
         );
 
         {
@@ -732,6 +880,76 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn process_xt_verification_allows_commit_on_success_response() {
+        let server = TestVerificationServer::spawn(StatusCode::OK, "I confirm").await;
+
+        let simulator = Arc::new(StubSimulator { succeed: true });
+        let coordinator = DefaultCoordinator::new(
+            ChainId(77777),
+            Some(simulator),
+            None,
+            None,
+            None,
+            None,
+            1000,
+            VerificationConfig {
+                enabled: true,
+                url: server.url.clone(),
+                timeout_ms: 2_000,
+            },
+        );
+
+        {
+            let mut state = coordinator.state.write().await;
+            let mut xt = PendingXt::new("xt-77777-verify".to_string(), b"xt-77777-verify".to_vec());
+            xt.raw_txs.insert(ChainId(77777), vec![vec![0xab, 0xcd]]);
+            state.pending.insert(xt.id.clone(), xt);
+        }
+
+        coordinator.process_xt("xt-77777-verify").await;
+
+        server.assert_hits(1);
+        let state = coordinator.state.read().await;
+        let xt = state.pending.get("xt-77777-verify").unwrap();
+        assert_eq!(xt.local_vote, Some(true));
+    }
+
+    #[tokio::test]
+    async fn process_xt_verification_abort_on_reject_response() {
+        let server = TestVerificationServer::spawn(StatusCode::FORBIDDEN, "reject").await;
+
+        let simulator = Arc::new(StubSimulator { succeed: true });
+        let coordinator = DefaultCoordinator::new(
+            ChainId(77777),
+            Some(simulator),
+            None,
+            None,
+            None,
+            None,
+            1000,
+            VerificationConfig {
+                enabled: true,
+                url: server.url.clone(),
+                timeout_ms: 2_000,
+            },
+        );
+
+        {
+            let mut state = coordinator.state.write().await;
+            let mut xt = PendingXt::new("xt-77777-reject".to_string(), b"xt-77777-reject".to_vec());
+            xt.raw_txs.insert(ChainId(77777), vec![vec![0xab, 0xcd]]);
+            state.pending.insert(xt.id.clone(), xt);
+        }
+
+        coordinator.process_xt("xt-77777-reject").await;
+
+        server.assert_hits(1);
+        let state = coordinator.state.read().await;
+        let xt = state.pending.get("xt-77777-reject").unwrap();
+        assert_eq!(xt.local_vote, Some(false));
+    }
+
+    #[tokio::test]
     async fn process_xt_votes_false_on_simulation_error() {
         let simulator = Arc::new(StubSimulator { succeed: false });
         let coordinator = DefaultCoordinator::new(
@@ -742,6 +960,7 @@ mod tests {
             None,
             None,
             1000,
+            VerificationConfig::default(),
         );
 
         {
@@ -760,8 +979,16 @@ mod tests {
 
     #[tokio::test]
     async fn process_xt_votes_false_when_no_local_txs() {
-        let coordinator =
-            DefaultCoordinator::new(ChainId(77777), None, None, None, None, None, 1000);
+        let coordinator = DefaultCoordinator::new(
+            ChainId(77777),
+            None,
+            None,
+            None,
+            None,
+            None,
+            1000,
+            VerificationConfig::default(),
+        );
 
         {
             let mut state = coordinator.state.write().await;
@@ -806,6 +1033,7 @@ mod tests {
             None,
             None,
             1000,
+            VerificationConfig::default(),
         );
 
         let mut base_overrides = StateOverride::default();

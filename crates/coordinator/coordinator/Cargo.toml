@@ -30,3 +30,4 @@ prost.workspace = true
 
 [dev-dependencies]
 alloy-rpc-types-eth.workspace = true
+axum.workspace = true

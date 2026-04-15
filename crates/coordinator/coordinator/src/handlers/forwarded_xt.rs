@@ -124,13 +124,21 @@ mod tests {
     use compose_primitives::{ChainId, SequenceNumber};
     use compose_primitives_traits::CoordinatorError;
 
-    use crate::coordinator::DefaultCoordinator;
+    use crate::coordinator::{DefaultCoordinator, VerificationConfig};
     use crate::model::pending_xt::PendingXt;
 
     #[tokio::test]
     async fn handle_forwarded_xt_rejects_when_at_max_pending() {
-        let coordinator =
-            DefaultCoordinator::new(ChainId(77777), None, None, None, None, None, 1000);
+        let coordinator = DefaultCoordinator::new(
+            ChainId(77777),
+            None,
+            None,
+            None,
+            None,
+            None,
+            1000,
+            VerificationConfig::default(),
+        );
 
         // Fill pending with MAX_PENDING_XTS undecided XTs.
         {

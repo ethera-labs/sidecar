@@ -1298,6 +1298,7 @@ dependencies = [
  "alloy",
  "alloy-rpc-types-eth",
  "async-trait",
+ "axum",
  "compose-mailbox",
  "compose-metrics",
  "compose-peer",

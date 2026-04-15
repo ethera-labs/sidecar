@@ -242,6 +242,8 @@ mod tests {
     use compose_primitives_traits::PutInboxBuilder;
     use tokio::sync::Mutex;
 
+    use crate::coordinator::VerificationConfig;
+
     #[derive(Debug)]
     struct TestPutInboxBuilder {
         canonical_nonce: Mutex<u64>,
@@ -292,8 +294,16 @@ mod tests {
 
     #[tokio::test]
     async fn confirm_included_xts_keeps_pending_for_status_polling() {
-        let coordinator =
-            DefaultCoordinator::new(ChainId(77777), None, None, None, None, None, 1000);
+        let coordinator = DefaultCoordinator::new(
+            ChainId(77777),
+            None,
+            None,
+            None,
+            None,
+            None,
+            1000,
+            VerificationConfig::default(),
+        );
 
         {
             let mut state = coordinator.state.write().await;
@@ -324,8 +334,16 @@ mod tests {
 
     #[test]
     fn local_builder_submission_prefers_publisher_sequence() {
-        let coordinator =
-            DefaultCoordinator::new(ChainId(77777), None, None, None, None, None, 1000);
+        let coordinator = DefaultCoordinator::new(
+            ChainId(77777),
+            None,
+            None,
+            None,
+            None,
+            None,
+            1000,
+            VerificationConfig::default(),
+        );
         let mut xt = PendingXt::new("xt-77777-2".to_string(), b"xt-77777-2".to_vec());
         xt.period_id = PeriodId(11);
         xt.sequence_num = SequenceNumber(7);
@@ -340,8 +358,16 @@ mod tests {
 
     #[tokio::test]
     async fn build_put_inbox_transactions_uses_canonical_nonce_source() {
-        let mut coordinator =
-            DefaultCoordinator::new(ChainId(77777), None, None, None, None, None, 1000);
+        let mut coordinator = DefaultCoordinator::new(
+            ChainId(77777),
+            None,
+            None,
+            None,
+            None,
+            None,
+            1000,
+            VerificationConfig::default(),
+        );
         let builder = Arc::new(TestPutInboxBuilder::new(7));
         coordinator.set_put_inbox_builder(builder.clone());
 

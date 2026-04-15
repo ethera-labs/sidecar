@@ -74,12 +74,20 @@ impl DefaultCoordinator {
 mod tests {
     use compose_primitives::{ChainId, PeriodId, SuperblockNumber};
 
-    use crate::coordinator::DefaultCoordinator;
+    use crate::coordinator::{DefaultCoordinator, VerificationConfig};
 
     #[tokio::test]
     async fn handle_rollback_updates_period_and_superblock() {
-        let coordinator =
-            DefaultCoordinator::new(ChainId(77777), None, None, None, None, None, 1000);
+        let coordinator = DefaultCoordinator::new(
+            ChainId(77777),
+            None,
+            None,
+            None,
+            None,
+            None,
+            1000,
+            VerificationConfig::default(),
+        );
 
         // Set initial state.
         {

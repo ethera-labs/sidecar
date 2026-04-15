@@ -9,6 +9,7 @@ use compose_peer::traits::PeerCoordinator;
 use compose_primitives::{ChainId, InstanceId, PeriodId, SequenceNumber, SuperblockNumber};
 use compose_simulation::traits::Simulator;
 use prost::Message;
+use reqwest::Client;
 use tokio::sync::{oneshot, Notify, RwLock};
 use tokio_util::task::TaskTracker;
 use tracing::{error, info, warn};
@@ -28,6 +29,14 @@ use crate::pipeline::submission::{build_xt_request, xt_request_fingerprint};
 
 type PendingSubmissionResult = Result<InstanceId, String>;
 type PendingSubmissionSender = oneshot::Sender<PendingSubmissionResult>;
+
+/// Inbound verification hook configuration.
+#[derive(Debug, Clone, Default)]
+pub struct VerificationConfig {
+    pub enabled: bool,
+    pub url: String,
+    pub timeout_ms: u64,
+}
 
 /// Shared coordinator state protected by a `RwLock`.
 #[derive(Debug)]
@@ -118,6 +127,8 @@ pub struct DefaultCoordinator {
     pub(crate) circ_timeout_ms: u64,
     pub(crate) task_tracker: TaskTracker,
     pub(crate) metrics: Option<Arc<SidecarMetrics>>,
+    pub(crate) verification: VerificationConfig,
+    pub(crate) verification_client: Option<Client>,
 }
 
 impl std::fmt::Debug for DefaultCoordinator {
@@ -139,6 +150,7 @@ impl DefaultCoordinator {
         mailbox_queue: Option<Arc<dyn MailboxQueue>>,
         peer_coordinator: Option<Arc<dyn PeerCoordinator>>,
         circ_timeout_ms: u64,
+        verification: VerificationConfig,
     ) -> Self {
         Self {
             chain_id,
@@ -154,6 +166,8 @@ impl DefaultCoordinator {
             circ_timeout_ms,
             task_tracker: TaskTracker::new(),
             metrics: None,
+            verification_client: Self::build_verification_client(&verification),
+            verification,
         }
     }
 
@@ -170,6 +184,19 @@ impl DefaultCoordinator {
     /// Attach a builder-control client for XT reservation lifecycle events.
     pub fn set_xt_builder_client(&mut self, client: Arc<dyn XtBuilderClient>) {
         self.xt_builder_client = Some(client);
+    }
+
+    fn build_verification_client(verification: &VerificationConfig) -> Option<Client> {
+        if !verification.enabled {
+            return None;
+        }
+
+        Some(
+            Client::builder()
+                .timeout(Duration::from_millis(verification.timeout_ms))
+                .build()
+                .expect("verification client configuration should be valid"),
+        )
     }
 
     /// Start the coordinator's background tasks (cleanup loop, etc.).
@@ -583,8 +610,16 @@ mod tests {
 
     #[tokio::test]
     async fn cleanup_removes_old_decided_xts() {
-        let coordinator =
-            DefaultCoordinator::new(ChainId(77777), None, None, None, None, None, 1000);
+        let coordinator = DefaultCoordinator::new(
+            ChainId(77777),
+            None,
+            None,
+            None,
+            None,
+            None,
+            1000,
+            VerificationConfig::default(),
+        );
 
         {
             let mut state = coordinator.state.write().await;
@@ -606,8 +641,16 @@ mod tests {
 
     #[tokio::test]
     async fn cleanup_removes_old_confirmed_xts() {
-        let coordinator =
-            DefaultCoordinator::new(ChainId(77777), None, None, None, None, None, 1000);
+        let coordinator = DefaultCoordinator::new(
+            ChainId(77777),
+            None,
+            None,
+            None,
+            None,
+            None,
+            1000,
+            VerificationConfig::default(),
+        );
 
         {
             let mut state = coordinator.state.write().await;
@@ -631,8 +674,16 @@ mod tests {
 
     #[tokio::test]
     async fn cleanup_retains_recently_confirmed_xts() {
-        let coordinator =
-            DefaultCoordinator::new(ChainId(77777), None, None, None, None, None, 1000);
+        let coordinator = DefaultCoordinator::new(
+            ChainId(77777),
+            None,
+            None,
+            None,
+            None,
+            None,
+            1000,
+            VerificationConfig::default(),
+        );
 
         {
             let mut state = coordinator.state.write().await;
@@ -665,6 +716,7 @@ mod tests {
             None,
             None,
             1000,
+            VerificationConfig::default(),
         );
 
         let mut txs = HashMap::new();
@@ -706,8 +758,16 @@ mod tests {
 
     #[tokio::test]
     async fn rollback_resolves_pending_submission_waiters() {
-        let coordinator =
-            DefaultCoordinator::new(ChainId(77777), None, None, None, None, None, 1000);
+        let coordinator = DefaultCoordinator::new(
+            ChainId(77777),
+            None,
+            None,
+            None,
+            None,
+            None,
+            1000,
+            VerificationConfig::default(),
+        );
         let (tx, rx) = oneshot::channel();
 
         {

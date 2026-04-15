@@ -8,7 +8,7 @@ use clap::Parser;
 use compose_config::SidecarArgs;
 use compose_coordinator::builder::CoordinatorBuilder;
 use compose_coordinator::builder_client::HttpXtBuilderClient;
-use compose_coordinator::coordinator::DefaultCoordinator;
+use compose_coordinator::coordinator::{DefaultCoordinator, VerificationConfig};
 use compose_mailbox::put_inbox::PutInboxTxBuilder;
 use compose_mailbox::queue::InMemoryQueue;
 use compose_metrics::SidecarMetrics;
@@ -38,7 +38,7 @@ async fn main() -> Result<()> {
     let mut registry = Registry::default();
     let metrics = Arc::new(SidecarMetrics::new(&mut registry));
 
-    let (coordinator, quic_client) = build_coordinator(&args, metrics);
+    let (coordinator, quic_client) = build_coordinator(&args, metrics)?;
 
     coordinator.start().await?;
 
@@ -65,7 +65,7 @@ async fn main() -> Result<()> {
 fn build_coordinator(
     args: &SidecarArgs,
     metrics: Arc<SidecarMetrics>,
-) -> (DefaultCoordinator, Option<Arc<QuicClient>>) {
+) -> Result<(DefaultCoordinator, Option<Arc<QuicClient>>)> {
     let chain_id = args.chain.chain_id();
 
     let mut builder = CoordinatorBuilder::new(chain_id).metrics(metrics);
@@ -123,6 +123,12 @@ fn build_coordinator(
 
     builder = builder.mailbox_queue(Arc::new(InMemoryQueue::new()));
 
+    builder = builder.verification_config(VerificationConfig {
+        enabled: args.verification.enabled,
+        url: args.verification.url.clone(),
+        timeout_ms: args.verification.timeout_ms,
+    });
+
     let peer_entries = args.peers.to_entries();
     if !peer_entries.is_empty() {
         let peers: Vec<PeerEntry> = peer_entries
@@ -170,7 +176,7 @@ fn build_coordinator(
         None
     };
 
-    (builder.build(), quic_client)
+    Ok((builder.build()?, quic_client))
 }
 
 fn spawn_publisher_connection(coordinator: Arc<DefaultCoordinator>, client: Arc<QuicClient>) {

@@ -81,13 +81,21 @@ impl DefaultCoordinator {
 mod tests {
     use compose_primitives::ChainId;
 
-    use crate::coordinator::DefaultCoordinator;
+    use crate::coordinator::{DefaultCoordinator, VerificationConfig};
     use crate::model::pending_xt::PendingXt;
 
     #[tokio::test]
     async fn duplicate_peer_vote_is_ignored() {
-        let coordinator =
-            DefaultCoordinator::new(ChainId(77777), None, None, None, None, None, 1000);
+        let coordinator = DefaultCoordinator::new(
+            ChainId(77777),
+            None,
+            None,
+            None,
+            None,
+            None,
+            1000,
+            VerificationConfig::default(),
+        );
 
         {
             let mut state = coordinator.state.write().await;
@@ -116,8 +124,16 @@ mod tests {
 
     #[tokio::test]
     async fn peer_abort_vote_decides_immediately() {
-        let coordinator =
-            DefaultCoordinator::new(ChainId(77777), None, None, None, None, None, 1000);
+        let coordinator = DefaultCoordinator::new(
+            ChainId(77777),
+            None,
+            None,
+            None,
+            None,
+            None,
+            1000,
+            VerificationConfig::default(),
+        );
 
         {
             let mut state = coordinator.state.write().await;
