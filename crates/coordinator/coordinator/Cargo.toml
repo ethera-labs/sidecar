@@ -30,4 +30,4 @@ prost.workspace = true
 
 [dev-dependencies]
 alloy-rpc-types-eth.workspace = true
-httpmock = "0.7"
+axum.workspace = true

@@ -1,7 +1,7 @@
 //! Helpers for synchronizing XT lifecycle events with the local builder.
 
 use crate::{
-    coordinator::{CoordinatorState, DefaultCoordinator, VerificationConfig},
+    coordinator::{CoordinatorState, DefaultCoordinator},
     model::pending_xt::PendingXt,
     pipeline::delivery::deps_for_chain,
 };
@@ -241,6 +241,8 @@ mod tests {
     use compose_primitives::{ChainId, PeriodId, SequenceNumber};
     use compose_primitives_traits::PutInboxBuilder;
     use tokio::sync::Mutex;
+
+    use crate::coordinator::VerificationConfig;
 
     #[derive(Debug)]
     struct TestPutInboxBuilder {

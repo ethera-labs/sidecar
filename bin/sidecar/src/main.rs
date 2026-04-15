@@ -38,7 +38,7 @@ async fn main() -> Result<()> {
     let mut registry = Registry::default();
     let metrics = Arc::new(SidecarMetrics::new(&mut registry));
 
-    let (coordinator, quic_client) = build_coordinator(&args, metrics);
+    let (coordinator, quic_client) = build_coordinator(&args, metrics)?;
 
     coordinator.start().await?;
 
@@ -65,7 +65,7 @@ async fn main() -> Result<()> {
 fn build_coordinator(
     args: &SidecarArgs,
     metrics: Arc<SidecarMetrics>,
-) -> (DefaultCoordinator, Option<Arc<QuicClient>>) {
+) -> Result<(DefaultCoordinator, Option<Arc<QuicClient>>)> {
     let chain_id = args.chain.chain_id();
 
     let mut builder = CoordinatorBuilder::new(chain_id).metrics(metrics);
@@ -176,7 +176,7 @@ fn build_coordinator(
         None
     };
 
-    (builder.build(), quic_client)
+    Ok((builder.build()?, quic_client))
 }
 
 fn spawn_publisher_connection(coordinator: Arc<DefaultCoordinator>, client: Arc<QuicClient>) {

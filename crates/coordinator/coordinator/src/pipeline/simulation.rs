@@ -6,7 +6,6 @@ use compose_mailbox::matching::{contains_message, dep_key, matches_dependency};
 use compose_mailbox::overrides::merge_overrides;
 use compose_primitives::{ChainId, CrossRollupDependency, CrossRollupMessage, StateOverride};
 use compose_proto::MailboxMessage;
-use reqwest::Client;
 use serde::Serialize;
 use tokio::time::{sleep_until, Instant};
 use tracing::{debug, error, info, warn};
@@ -255,10 +254,10 @@ impl DefaultCoordinator {
             txs: txs.iter().map(hex::encode).collect(),
         };
 
-        let client = Client::builder()
-            .timeout(Duration::from_millis(self.verification.timeout_ms))
-            .build()
-            .map_err(|e| format!("failed to build HTTP client: {e}"))?;
+        let client = self
+            .verification_client
+            .as_ref()
+            .ok_or_else(|| "verification client not configured".to_string())?;
 
         let response = client
             .post(&self.verification.url)
@@ -599,18 +598,74 @@ mod tests {
     use alloy::primitives::Address;
     use alloy_rpc_types_eth::state::AccountOverride;
     use async_trait::async_trait;
+    use axum::{extract::State, http::StatusCode, routing::post, Router};
     use compose_primitives::ChainId;
     use compose_primitives::StateOverride;
     use compose_primitives::{CrossRollupDependency, SimulationResult};
     use compose_simulation::error::SimulationError;
     use compose_simulation::traits::Simulator;
-    use httpmock::prelude::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::{Arc, Mutex};
+    use tokio::{net::TcpListener, task::JoinHandle};
 
     use crate::coordinator::{DefaultCoordinator, VerificationConfig};
     use crate::model::chain_overlay::ChainOverlay;
     use crate::model::pending_xt::PendingXt;
+
+    #[derive(Clone)]
+    struct VerificationServerState {
+        hits: Arc<AtomicUsize>,
+        status: StatusCode,
+        body: &'static str,
+    }
+
+    struct TestVerificationServer {
+        hits: Arc<AtomicUsize>,
+        task: JoinHandle<()>,
+        url: String,
+    }
+
+    impl TestVerificationServer {
+        async fn spawn(status: StatusCode, body: &'static str) -> Self {
+            let hits = Arc::new(AtomicUsize::new(0));
+            let app = Router::new()
+                .route("/verify", post(test_verification_handler))
+                .with_state(VerificationServerState {
+                    hits: hits.clone(),
+                    status,
+                    body,
+                });
+
+            let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let addr = listener.local_addr().unwrap();
+            let task = tokio::spawn(async move {
+                axum::serve(listener, app).await.unwrap();
+            });
+
+            Self {
+                hits,
+                task,
+                url: format!("http://{addr}/verify"),
+            }
+        }
+
+        fn assert_hits(&self, expected: usize) {
+            assert_eq!(self.hits.load(Ordering::SeqCst), expected);
+        }
+    }
+
+    impl Drop for TestVerificationServer {
+        fn drop(&mut self) {
+            self.task.abort();
+        }
+    }
+
+    async fn test_verification_handler(
+        State(state): State<VerificationServerState>,
+    ) -> (StatusCode, &'static str) {
+        state.hits.fetch_add(1, Ordering::SeqCst);
+        (state.status, state.body)
+    }
 
     #[tokio::test]
     async fn send_vote_does_not_overwrite_existing_local_vote() {
@@ -826,13 +881,7 @@ mod tests {
 
     #[tokio::test]
     async fn process_xt_verification_allows_commit_on_success_response() {
-        let server = MockServer::start_async().await;
-        let mock = server
-            .mock_async(|when, then| {
-                when.method(POST).path("/verify");
-                then.status(200).body("I confirm");
-            })
-            .await;
+        let server = TestVerificationServer::spawn(StatusCode::OK, "I confirm").await;
 
         let simulator = Arc::new(StubSimulator { succeed: true });
         let coordinator = DefaultCoordinator::new(
@@ -845,7 +894,7 @@ mod tests {
             1000,
             VerificationConfig {
                 enabled: true,
-                url: server.url("/verify"),
+                url: server.url.clone(),
                 timeout_ms: 2_000,
             },
         );
@@ -859,7 +908,7 @@ mod tests {
 
         coordinator.process_xt("xt-77777-verify").await;
 
-        mock.assert_hits_async(1).await;
+        server.assert_hits(1);
         let state = coordinator.state.read().await;
         let xt = state.pending.get("xt-77777-verify").unwrap();
         assert_eq!(xt.local_vote, Some(true));
@@ -867,13 +916,7 @@ mod tests {
 
     #[tokio::test]
     async fn process_xt_verification_abort_on_reject_response() {
-        let server = MockServer::start_async().await;
-        let mock = server
-            .mock_async(|when, then| {
-                when.method(POST).path("/verify");
-                then.status(403).body("reject");
-            })
-            .await;
+        let server = TestVerificationServer::spawn(StatusCode::FORBIDDEN, "reject").await;
 
         let simulator = Arc::new(StubSimulator { succeed: true });
         let coordinator = DefaultCoordinator::new(
@@ -886,7 +929,7 @@ mod tests {
             1000,
             VerificationConfig {
                 enabled: true,
-                url: server.url("/verify"),
+                url: server.url.clone(),
                 timeout_ms: 2_000,
             },
         );
@@ -900,7 +943,7 @@ mod tests {
 
         coordinator.process_xt("xt-77777-reject").await;
 
-        mock.assert_hits_async(1).await;
+        server.assert_hits(1);
         let state = coordinator.state.read().await;
         let xt = state.pending.get("xt-77777-reject").unwrap();
         assert_eq!(xt.local_vote, Some(false));

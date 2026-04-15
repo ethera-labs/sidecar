@@ -6,9 +6,12 @@ use compose_mailbox::traits::MailboxQueue;
 use compose_peer::traits::PeerCoordinator;
 use compose_primitives::ChainId;
 use compose_simulation::traits::Simulator;
+use reqwest::Url;
 
 use compose_metrics::SidecarMetrics;
-use compose_primitives_traits::{MailboxSender, PublisherClient, PutInboxBuilder, XtBuilderClient};
+use compose_primitives_traits::{
+    CoordinatorError, MailboxSender, PublisherClient, PutInboxBuilder, XtBuilderClient,
+};
 
 use crate::coordinator::{DefaultCoordinator, VerificationConfig};
 
@@ -103,7 +106,8 @@ impl CoordinatorBuilder {
         self
     }
 
-    pub fn build(self) -> DefaultCoordinator {
+    pub fn build(self) -> Result<DefaultCoordinator, CoordinatorError> {
+        Self::validate_verification_config(&self.verification)?;
         let mut coord = DefaultCoordinator::new(
             self.chain_id,
             self.simulator,
@@ -123,6 +127,53 @@ impl CoordinatorBuilder {
         if let Some(m) = self.metrics {
             coord.set_metrics(m);
         }
-        coord
+        Ok(coord)
+    }
+
+    fn validate_verification_config(
+        verification: &VerificationConfig,
+    ) -> Result<(), CoordinatorError> {
+        if !verification.enabled {
+            return Ok(());
+        }
+
+        if verification.url.trim().is_empty() {
+            return Err(CoordinatorError::Other(
+                "verification.enabled requires verification.url".to_string(),
+            ));
+        }
+
+        Url::parse(&verification.url).map_err(|e| {
+            CoordinatorError::Other(format!(
+                "invalid verification.url '{}': {e}",
+                verification.url
+            ))
+        })?;
+
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use compose_primitives::ChainId;
+
+    use super::*;
+
+    #[test]
+    fn build_rejects_enabled_verification_without_url() {
+        let err = CoordinatorBuilder::new(ChainId(77777))
+            .verification_config(VerificationConfig {
+                enabled: true,
+                url: String::new(),
+                timeout_ms: 2_000,
+            })
+            .build()
+            .unwrap_err();
+
+        assert_eq!(
+            err.to_string(),
+            "verification.enabled requires verification.url"
+        );
     }
 }

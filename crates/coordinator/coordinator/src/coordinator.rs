@@ -9,6 +9,7 @@ use compose_peer::traits::PeerCoordinator;
 use compose_primitives::{ChainId, InstanceId, PeriodId, SequenceNumber, SuperblockNumber};
 use compose_simulation::traits::Simulator;
 use prost::Message;
+use reqwest::Client;
 use tokio::sync::{oneshot, Notify, RwLock};
 use tokio_util::task::TaskTracker;
 use tracing::{error, info, warn};
@@ -127,6 +128,7 @@ pub struct DefaultCoordinator {
     pub(crate) task_tracker: TaskTracker,
     pub(crate) metrics: Option<Arc<SidecarMetrics>>,
     pub(crate) verification: VerificationConfig,
+    pub(crate) verification_client: Option<Client>,
 }
 
 impl std::fmt::Debug for DefaultCoordinator {
@@ -164,6 +166,7 @@ impl DefaultCoordinator {
             circ_timeout_ms,
             task_tracker: TaskTracker::new(),
             metrics: None,
+            verification_client: Self::build_verification_client(&verification),
             verification,
         }
     }
@@ -181,6 +184,19 @@ impl DefaultCoordinator {
     /// Attach a builder-control client for XT reservation lifecycle events.
     pub fn set_xt_builder_client(&mut self, client: Arc<dyn XtBuilderClient>) {
         self.xt_builder_client = Some(client);
+    }
+
+    fn build_verification_client(verification: &VerificationConfig) -> Option<Client> {
+        if !verification.enabled || verification.url.is_empty() {
+            return None;
+        }
+
+        Some(
+            Client::builder()
+                .timeout(Duration::from_millis(verification.timeout_ms))
+                .build()
+                .expect("verification client configuration should be valid"),
+        )
     }
 
     /// Start the coordinator's background tasks (cleanup loop, etc.).
