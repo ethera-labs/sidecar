@@ -187,7 +187,7 @@ impl DefaultCoordinator {
     }
 
     fn build_verification_client(verification: &VerificationConfig) -> Option<Client> {
-        if !verification.enabled || verification.url.is_empty() {
+        if !verification.enabled {
             return None;
         }
 

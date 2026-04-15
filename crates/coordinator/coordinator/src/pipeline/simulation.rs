@@ -235,7 +235,7 @@ impl DefaultCoordinator {
     }
 
     async fn verify_xt(&self, instance_id: &str, txs: &[Vec<u8>]) -> Result<(), String> {
-        if !self.verification.enabled || self.verification.url.is_empty() {
+        if !self.verification.enabled {
             return Ok(());
         }
 
