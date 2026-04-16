@@ -61,6 +61,7 @@ pub struct ServerArgs {
 pub struct PublisherArgs {
     /// Enable publisher connection.
     #[arg(
+        id = "publisher_enabled",
         long = "publisher.enabled",
         env = "SIDECAR_PUBLISHER_ENABLED",
         default_value = "false",
@@ -244,6 +245,7 @@ pub struct LogArgs {
 pub struct VerificationArgs {
     /// Enable the external verification hook before voting commit.
     #[arg(
+        id = "verification_enabled",
         long = "verification.enabled",
         env = "SIDECAR_VERIFICATION_ENABLED",
         default_value = "false",
