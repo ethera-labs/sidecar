@@ -57,6 +57,7 @@ impl DefaultCoordinator {
 
         if let Err(err) = self.resync_put_inbox_nonce().await {
             warn!(error = %err, "Failed to resync putInbox nonce after rollback");
+            self.nonce_manager.reset().await;
         }
 
         for waiters in pending_submissions.into_values() {

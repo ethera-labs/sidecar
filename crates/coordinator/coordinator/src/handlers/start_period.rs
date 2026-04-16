@@ -59,6 +59,7 @@ impl DefaultCoordinator {
 
         if let Err(e) = self.resync_put_inbox_nonce().await {
             error!(error = %e, "Failed to resync putInbox nonce on period change");
+            self.nonce_manager.reset().await;
         }
 
         // Notify the publisher of the abort for each stale XT so it can

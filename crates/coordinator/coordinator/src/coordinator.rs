@@ -223,19 +223,20 @@ impl DefaultCoordinator {
     pub async fn cleanup(&self, max_age: Duration) {
         let mut state = self.state.write().await;
         let now = std::time::Instant::now();
+        let mut new_mailbox_index = HashMap::with_capacity(state.pending.len());
         state.pending.retain(|_id, xt| {
             let age_ref = xt.confirmed_at.or(xt.decided_at);
-            if let Some(t) = age_ref {
+            let keep = if let Some(t) = age_ref {
                 now.duration_since(t) <= max_age
             } else {
                 true
+            };
+            if keep {
+                new_mailbox_index.insert(xt.instance_id.clone(), xt.id.clone());
             }
+            keep
         });
-        state.mailbox_index = state
-            .pending
-            .values()
-            .map(|xt| (xt.instance_id.clone(), xt.id.clone()))
-            .collect();
+        state.mailbox_index = new_mailbox_index;
         let stale_fps: Vec<String> = state
             .submitted_fingerprints
             .iter()
@@ -383,6 +384,11 @@ impl DefaultCoordinator {
     ) -> Result<String, CoordinatorError> {
         if txs.is_empty() {
             return Err(CoordinatorError::NoTransactions);
+        }
+        if txs.len() < 2 {
+            return Err(CoordinatorError::Other(
+                "cross-chain transaction must span at least 2 chains".to_string(),
+            ));
         }
 
         if self.is_publisher_connected().await {

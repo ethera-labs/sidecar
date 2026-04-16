@@ -17,7 +17,7 @@ use crate::traits::Transport;
 ///
 /// Each send opens a new bidirectional stream and writes a single
 /// length-prefixed frame. Incoming messages arrive on server-initiated
-/// streams, one frame per stream.
+/// unidirectional streams, one frame per stream.
 #[derive(Debug)]
 pub struct QuicClient {
     config: ClientConfig,
@@ -236,8 +236,8 @@ impl Transport for QuicClient {
             let conn = self.ensure_connected().await?;
             let conn_id = conn.stable_id();
 
-            let (_, mut recv_stream) = match conn.accept_bi().await {
-                Ok(streams) => streams,
+            let mut recv_stream = match conn.accept_uni().await {
+                Ok(stream) => stream,
                 Err(quinn::ConnectionError::ApplicationClosed { .. })
                 | Err(quinn::ConnectionError::ConnectionClosed(_))
                 | Err(quinn::ConnectionError::LocallyClosed)
@@ -247,7 +247,7 @@ impl Transport for QuicClient {
                 }
                 Err(e) => {
                     self.mark_disconnected(Some(conn_id)).await;
-                    warn!(error = %e, "accept_bi failed, reconnecting");
+                    warn!(error = %e, "accept_uni failed, reconnecting");
                     continue;
                 }
             };
