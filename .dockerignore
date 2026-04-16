@@ -1,0 +1,15 @@
+# Restrict the build context to the files required to produce sidecar images.
+*
+!Cargo.lock
+!Cargo.toml
+!rust-toolchain.toml
+!rustfmt.toml
+!Dockerfile
+!bin/
+!bin/**
+!build/
+!build/Dockerfile
+!configs/
+!configs/**
+!crates/
+!crates/**
