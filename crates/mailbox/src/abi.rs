@@ -6,19 +6,18 @@ use alloy::sol_types::SolCall;
 
 use crate::error::MailboxError;
 
-// Generate the ABI bindings for the Mailbox contract's putInbox function.
 sol! {
     function putInbox(
         uint256 chainMessageSender,
         address sender,
         address receiver,
         uint256 sessionId,
-        bytes label,
+        string label,
         bytes data
     );
 }
 
-/// Encode a `putInbox` call for the Mailbox contract.
+/// Encode a `putInbox` call for the `UniversalBridgeMailbox` contract.
 pub fn encode_put_inbox(
     source_chain_id: u64,
     sender: Address,
@@ -32,7 +31,7 @@ pub fn encode_put_inbox(
         sender,
         receiver,
         sessionId: session_id,
-        label: label.to_vec().into(),
+        label: String::from_utf8_lossy(label).to_string(),
         data: data.to_vec().into(),
     };
     Ok(call.abi_encode())
@@ -49,11 +48,10 @@ mod tests {
             Address::ZERO,
             Address::ZERO,
             U256::ZERO,
-            b"test",
+            b"SEND_TOKENS",
             b"hello",
         )
         .unwrap();
-        // Function selector (4 bytes) + encoded params
         assert!(data.len() > 4);
     }
 }

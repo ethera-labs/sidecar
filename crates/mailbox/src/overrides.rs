@@ -106,16 +106,15 @@ fn apply_bytes_to_state_diff(state_diff: &mut SlotMap, slot: B256, data: &[u8]) 
 ///  104      32     session_id       (uint256)
 ///  136      var    label            (raw bytes)
 /// ```
-fn mailbox_key(chain_id: ChainId, dep: &CrossRollupDependency) -> Option<B256> {
-    let session_id = dep.session_id?;
+fn mailbox_key(chain_id: ChainId, dep: &CrossRollupDependency) -> B256 {
     let mut preimage = Vec::with_capacity(32 + 32 + 20 + 20 + 32 + dep.label.len());
     preimage.extend_from_slice(&U256::from(dep.source_chain_id.0).to_be_bytes::<32>());
     preimage.extend_from_slice(&U256::from(chain_id.0).to_be_bytes::<32>());
     preimage.extend_from_slice(dep.sender.as_slice());
     preimage.extend_from_slice(dep.receiver.as_slice());
-    preimage.extend_from_slice(&session_id.to_be_bytes::<32>());
+    preimage.extend_from_slice(&dep.session_id.to_be_bytes::<32>());
     preimage.extend_from_slice(&dep.label);
-    Some(keccak256(preimage))
+    keccak256(preimage)
 }
 
 /// Build mailbox state overrides for fulfilled dependencies.
@@ -136,9 +135,7 @@ pub fn build_mailbox_state_overrides(
         let Some(data) = dep.data.as_ref() else {
             continue;
         };
-        let Some(key) = mailbox_key(chain_id, dep) else {
-            continue;
-        };
+        let key = mailbox_key(chain_id, dep);
 
         let inbox_slot = mapping_slot(key, INBOX_MAPPING_SLOT);
         let created_slot = mapping_slot(key, CREATED_KEYS_MAPPING_SLOT);
@@ -205,7 +202,7 @@ mod tests {
             receiver: Address::repeat_byte(0x22),
             label: b"SEND".to_vec(),
             data: Some(vec![1, 2, 3]),
-            session_id: Some(U256::from(42u64)),
+            session_id: U256::from(42u64),
         };
 
         let mailbox_addr: Address = "0xe5d5d610fb9767df117f4076444b45404201a097"
