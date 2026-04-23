@@ -236,7 +236,7 @@ mod tests {
     use super::*;
     use std::sync::Arc;
 
-    use alloy::primitives::Address;
+    use alloy::primitives::{Address, U256};
     use async_trait::async_trait;
     use compose_primitives::{ChainId, PeriodId, SequenceNumber};
     use compose_primitives_traits::PutInboxBuilder;
@@ -269,7 +269,7 @@ mod tests {
             receiver: Address::ZERO,
             label: b"dep".to_vec(),
             data: None,
-            session_id: None,
+            session_id: U256::ZERO,
         }
     }
 

@@ -16,12 +16,13 @@ use crate::model::chain_overlay::ChainOverlay;
 /// Canonical dedup key for a sent mailbox message.
 fn mailbox_message_key(msg: &MailboxMessage) -> String {
     format!(
-        "{}:{}:{}:{}:{}:{}",
+        "{}:{}:{}:{}:{}:{}:{}",
         hex::encode(&msg.instance_id),
         msg.source_chain,
         msg.destination_chain,
-        hex::encode(&msg.source),
+        hex::encode(&msg.sender),
         hex::encode(&msg.receiver),
+        hex::encode(&msg.session_id),
         msg.label,
     )
 }
@@ -406,7 +407,7 @@ impl DefaultCoordinator {
             {
                 let mailbox_msg = xt.pending_mailbox.remove(idx);
                 let mut fulfilled = dep.clone();
-                fulfilled.data = mailbox_msg.data.first().cloned();
+                fulfilled.data = Some(mailbox_msg.payload.clone());
                 xt.fulfilled_dep_keys.insert(key);
                 xt.fulfilled_deps.push(fulfilled);
                 added += 1;
@@ -450,20 +451,15 @@ impl DefaultCoordinator {
             };
 
             for msg in outbound_messages {
-                let session_id = msg
-                    .session_id
-                    .and_then(|id| u64::try_from(id).ok())
-                    .unwrap_or_default();
-
                 let mailbox_msg = MailboxMessage {
                     instance_id: xt.instance_id.clone(),
                     source_chain: msg.source_chain_id.0,
                     destination_chain: msg.dest_chain_id.0,
-                    source: msg.sender.as_slice().to_vec(),
+                    sender: msg.sender.as_slice().to_vec(),
                     receiver: msg.receiver.as_slice().to_vec(),
                     label: msg.label.clone(),
-                    data: vec![msg.data.clone()],
-                    session_id,
+                    payload: msg.data.clone(),
+                    session_id: msg.session_id.to_be_bytes::<32>().to_vec(),
                 };
 
                 let key = mailbox_message_key(&mailbox_msg);
@@ -596,6 +592,7 @@ impl DefaultCoordinator {
 #[cfg(test)]
 mod tests {
     use alloy::primitives::Address;
+    use alloy::primitives::U256;
     use alloy_rpc_types_eth::state::AccountOverride;
     use async_trait::async_trait;
     use axum::{extract::State, http::StatusCode, routing::post, Router};
@@ -1016,7 +1013,7 @@ mod tests {
             receiver: Address::repeat_byte(0x44),
             label: b"SEND".to_vec(),
             data: None,
-            session_id: None,
+            session_id: U256::ZERO,
         };
 
         let simulator = Arc::new(RetryRecordingSimulator {
@@ -1059,8 +1056,11 @@ mod tests {
             xt.pending_mailbox.push(compose_proto::MailboxMessage {
                 source_chain: 88888,
                 destination_chain: 77777,
+                sender: Address::repeat_byte(0x33).as_slice().to_vec(),
+                receiver: Address::repeat_byte(0x44).as_slice().to_vec(),
                 label: "SEND".to_string(),
-                data: vec![vec![1, 2, 3]],
+                payload: vec![1, 2, 3],
+                session_id: U256::ZERO.to_be_bytes::<32>().to_vec(),
                 ..Default::default()
             });
             state.pending.insert(xt.id.clone(), xt);

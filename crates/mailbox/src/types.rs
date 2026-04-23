@@ -13,7 +13,7 @@ pub struct MailboxCall {
     pub receiver: Address,
     pub label: String,
     pub data: Vec<u8>,
-    pub session_id: Option<U256>,
+    pub session_id: U256,
 }
 
 /// Whether a mailbox call is a read (dependency) or write (outbound message).

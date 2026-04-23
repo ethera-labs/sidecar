@@ -1,22 +1,37 @@
 //! Mailbox trace parsing from call tracer output.
 
-use alloy::primitives::{Address, U256};
+use alloy::primitives::Address;
+use alloy::sol;
+use alloy::sol_types::SolCall;
 use compose_primitives::ChainId;
 use serde_json::Value;
 use tracing::debug;
 
 use crate::types::{MailboxCall, MailboxCallType, SimulationState};
 
-/// Function selector for `write(uint256,address,uint256,bytes,bytes)`.
-const WRITE_SELECTOR: &str = "0xcf80ca9a";
+sol! {
+    struct MessageHeader {
+        uint256 chainSrc;
+        uint256 chainDest;
+        address sender;
+        address receiver;
+        uint256 sessionId;
+        string label;
+    }
 
-/// Function selector for `read(uint256,address,uint256,bytes)`.
-const READ_SELECTOR: &str = "0xe8c7e15f";
+    struct Message {
+        MessageHeader header;
+        bytes payload;
+    }
+
+    function writeMessage(Message message);
+    function readMessage(MessageHeader header) returns (bytes);
+}
 
 /// Parse mailbox read/write calls from a geth `callTracer` output.
 ///
 /// Recursively walks the call tree, identifying calls to the mailbox contract
-/// by matching function selectors for `write` and `read`.
+/// by matching function selectors for `writeMessage` and `readMessage`.
 pub fn parse_call_trace(
     trace: &Value,
     mailbox_address: Address,
@@ -38,30 +53,29 @@ fn walk_trace(
     let input = node.get("input").and_then(|v| v.as_str()).unwrap_or("");
     let from_addr = from_str.parse::<Address>().ok();
 
-    // Check if this call targets the mailbox contract.
     if let Ok(to_addr) = to_str.parse::<Address>() {
         if to_addr == mailbox_address && input.len() >= 10 {
             let selector = &input[..10];
 
-            if selector == WRITE_SELECTOR {
+            let write_sel = format!("0x{}", hex::encode(writeMessageCall::SELECTOR));
+            let read_sel = format!("0x{}", hex::encode(readMessageCall::SELECTOR));
+
+            if selector == write_sel {
                 if let Some(caller) = from_addr {
                     if let Some(call) = decode_write(input, caller, local_chain_id) {
-                        debug!(label = %call.label, "Parsed mailbox write call");
+                        debug!(label = %call.label, "Parsed mailbox writeMessage call");
                         state.writes.push(call);
                     }
                 }
-            } else if selector == READ_SELECTOR {
-                if let Some(caller) = from_addr {
-                    if let Some(call) = decode_read(input, caller, local_chain_id) {
-                        debug!(label = %call.label, "Parsed mailbox read call");
-                        state.reads.push(call);
-                    }
+            } else if selector == read_sel {
+                if let Some(call) = decode_read(input, local_chain_id) {
+                    debug!(label = %call.label, "Parsed mailbox readMessage call");
+                    state.reads.push(call);
                 }
             }
         }
     }
 
-    // Recurse into child calls.
     if let Some(calls) = node.get("calls").and_then(|v| v.as_array()) {
         for child in calls {
             walk_trace(child, mailbox_address, local_chain_id, state);
@@ -69,134 +83,184 @@ fn walk_trace(
     }
 }
 
-/// Decode a `write(uint256,address,uint256,bytes,bytes)` call.
+/// Decode a `writeMessage(Message)` call.
+///
+/// The on-chain key uses `msg.sender` (= `caller`) as the sender, not `header.sender`.
 fn decode_write(input: &str, caller: Address, local_chain_id: ChainId) -> Option<MailboxCall> {
     let data = hex::decode(input.trim_start_matches("0x")).ok()?;
-    if data.len() < 4 + 5 * 32 {
-        return None;
-    }
-    let params = &data[4..];
-
-    let dest_chain = U256::from_be_slice(&params[0..32]);
-    let receiver = Address::from_slice(&params[44..64]);
-    let session_id = U256::from_be_slice(&params[64..96]);
-
-    let label_offset = U256::from_be_slice(&params[96..128])
-        .try_into()
-        .unwrap_or(0usize);
-    let label = decode_bytes_param(params, label_offset)?;
-
-    let data_offset = U256::from_be_slice(&params[128..160])
-        .try_into()
-        .unwrap_or(0usize);
-    let call_data = decode_bytes_param(params, data_offset)?;
+    let call = writeMessageCall::abi_decode(&data).ok()?;
+    let header = &call.message.header;
 
     Some(MailboxCall {
         call_type: MailboxCallType::Write,
         source_chain: local_chain_id,
-        dest_chain: ChainId(dest_chain.try_into().unwrap_or(0)),
+        dest_chain: ChainId(header.chainDest.try_into().unwrap_or(0)),
         sender: caller,
-        receiver,
-        label: String::from_utf8_lossy(&label).to_string(),
-        data: call_data,
-        session_id: Some(session_id),
+        receiver: header.receiver,
+        label: header.label.clone(),
+        data: call.message.payload.to_vec(),
+        session_id: header.sessionId,
     })
 }
 
-/// Decode a `read(uint256,address,uint256,bytes)` call.
-fn decode_read(input: &str, caller: Address, local_chain_id: ChainId) -> Option<MailboxCall> {
+/// Decode a `readMessage(MessageHeader)` call.
+fn decode_read(input: &str, local_chain_id: ChainId) -> Option<MailboxCall> {
     let data = hex::decode(input.trim_start_matches("0x")).ok()?;
-    if data.len() < 4 + 4 * 32 {
-        return None;
-    }
-    let params = &data[4..];
-
-    let source_chain = U256::from_be_slice(&params[0..32]);
-    let sender = Address::from_slice(&params[44..64]);
-    let session_id = U256::from_be_slice(&params[64..96]);
-
-    let label_offset = U256::from_be_slice(&params[96..128])
-        .try_into()
-        .unwrap_or(0usize);
-    let label = decode_bytes_param(params, label_offset)?;
+    let call = readMessageCall::abi_decode(&data).ok()?;
+    let header = &call.header;
 
     Some(MailboxCall {
         call_type: MailboxCallType::Read,
-        source_chain: ChainId(source_chain.try_into().unwrap_or(0)),
+        source_chain: ChainId(header.chainSrc.try_into().unwrap_or(0)),
         dest_chain: local_chain_id,
-        sender,
-        receiver: caller,
-        label: String::from_utf8_lossy(&label).to_string(),
+        sender: header.sender,
+        receiver: header.receiver,
+        label: header.label.clone(),
         data: Vec::new(),
-        session_id: Some(session_id),
+        session_id: header.sessionId,
     })
-}
-
-/// Decode a dynamic `bytes` parameter from ABI-encoded data.
-fn decode_bytes_param(params: &[u8], offset: usize) -> Option<Vec<u8>> {
-    if offset + 32 > params.len() {
-        return None;
-    }
-    let len: usize = U256::from_be_slice(&params[offset..offset + 32])
-        .try_into()
-        .ok()?;
-    let start = offset + 32;
-    if start + len > params.len() {
-        return None;
-    }
-    Some(params[start..start + len].to_vec())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloy::primitives::U256;
     use serde_json::json;
+
+    fn make_write_calldata(
+        dest_chain: u64,
+        caller: Address,
+        receiver: Address,
+        session_id: U256,
+        label: &str,
+        payload: &[u8],
+    ) -> String {
+        let call = writeMessageCall {
+            message: Message {
+                header: MessageHeader {
+                    chainSrc: U256::ZERO,
+                    chainDest: U256::from(dest_chain),
+                    sender: caller,
+                    receiver,
+                    sessionId: session_id,
+                    label: label.to_string(),
+                },
+                payload: payload.to_vec().into(),
+            },
+        };
+        format!("0x{}", hex::encode(call.abi_encode()))
+    }
+
+    fn make_read_calldata(
+        src_chain: u64,
+        dest_chain: u64,
+        sender: Address,
+        receiver: Address,
+        session_id: U256,
+        label: &str,
+    ) -> String {
+        let call = readMessageCall {
+            header: MessageHeader {
+                chainSrc: U256::from(src_chain),
+                chainDest: U256::from(dest_chain),
+                sender,
+                receiver,
+                sessionId: session_id,
+                label: label.to_string(),
+            },
+        };
+        format!("0x{}", hex::encode(call.abi_encode()))
+    }
 
     #[test]
     fn parses_write_call_trace() {
-        let mailbox = "0xe5d5d610fb9767df117f4076444b45404201a097"
-            .parse::<Address>()
+        let mailbox: Address = "0xe5d5d610fb9767df117f4076444b45404201a097"
+            .parse()
             .unwrap();
-        let caller = "0xf5fe1b951c5cdf2d4299f8e63444ff621cd2fed9"
-            .parse::<Address>()
+        let caller: Address = "0xf5fe1b951c5cdf2d4299f8e63444ff621cd2fed9"
+            .parse()
             .unwrap();
+        let receiver: Address = "0x4bcf3d44f2531497e82be4556f380b0a414aa9ce"
+            .parse()
+            .unwrap();
+        let session_id = U256::from(42u64);
+
+        let input = make_write_calldata(
+            88888,
+            caller,
+            receiver,
+            session_id,
+            "SEND_TOKENS",
+            b"payload",
+        );
+
         let trace = json!({
             "from": format!("{caller:#x}"),
             "to": format!("{mailbox:#x}"),
-            "input": "0xcf80ca9a0000000000000000000000000000000000000000000000000000000000015b38000000000000000000000000f5fe1b951c5cdf2d4299f8e63444ff621cd2fed902225347b4e7ad5a193d489b7170fd8530c06c3426e337fe1cfbfbd9ae4e7a2800000000000000000000000000000000000000000000000000000000000000a000000000000000000000000000000000000000000000000000000000000000e0000000000000000000000000000000000000000000000000000000000000000453454e440000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000800000000000000000000000004bcf3d44f2531497e82be4556f380b0a414aa9ce0000000000000000000000004bcf3d44f2531497e82be4556f380b0a414aa9ce00000000000000000000000047c286e684645f1ec602928707084edb241c57c70000000000000000000000000000000000000000000000001bc16d674ec80000"
+            "input": input,
         });
 
         let parsed = parse_call_trace(&trace, mailbox, ChainId(77777));
         assert_eq!(parsed.reads.len(), 0);
         assert_eq!(parsed.writes.len(), 1);
-        assert_eq!(parsed.writes[0].source_chain, ChainId(77777));
-        assert_eq!(parsed.writes[0].dest_chain, ChainId(88888));
-        assert_eq!(parsed.writes[0].sender, caller);
-        assert_eq!(parsed.writes[0].receiver, caller);
-        assert_eq!(parsed.writes[0].label, "SEND");
+
+        let w = &parsed.writes[0];
+        assert_eq!(w.source_chain, ChainId(77777));
+        assert_eq!(w.dest_chain, ChainId(88888));
+        assert_eq!(w.sender, caller);
+        assert_eq!(w.receiver, receiver);
+        assert_eq!(w.label, "SEND_TOKENS");
+        assert_eq!(w.session_id, session_id);
+        assert_eq!(w.data, b"payload");
     }
 
     #[test]
     fn parses_read_call_trace() {
-        let mailbox = "0xe5d5d610fb9767df117f4076444b45404201a097"
-            .parse::<Address>()
+        let mailbox: Address = "0xe5d5d610fb9767df117f4076444b45404201a097"
+            .parse()
             .unwrap();
-        let caller = "0xf5fe1b951c5cdf2d4299f8e63444ff621cd2fed9"
-            .parse::<Address>()
+        let caller: Address = "0xf5fe1b951c5cdf2d4299f8e63444ff621cd2fed9"
+            .parse()
             .unwrap();
+        let bridge_src: Address = "0x1111111111111111111111111111111111111111"
+            .parse()
+            .unwrap();
+        let session_id = U256::from(99u64);
+
+        let input = make_read_calldata(77777, 88888, bridge_src, caller, session_id, "SEND_TOKENS");
+
         let trace = json!({
             "from": format!("{caller:#x}"),
             "to": format!("{mailbox:#x}"),
-            "input": "0xe8c7e15f0000000000000000000000000000000000000000000000000000000000012fd1000000000000000000000000f5fe1b951c5cdf2d4299f8e63444ff621cd2fed902225347b4e7ad5a193d489b7170fd8530c06c3426e337fe1cfbfbd9ae4e7a280000000000000000000000000000000000000000000000000000000000000080000000000000000000000000000000000000000000000000000000000000000453454e4400000000000000000000000000000000000000000000000000000000"
+            "input": input,
         });
 
         let parsed = parse_call_trace(&trace, mailbox, ChainId(88888));
         assert_eq!(parsed.writes.len(), 0);
         assert_eq!(parsed.reads.len(), 1);
-        assert_eq!(parsed.reads[0].source_chain, ChainId(77777));
-        assert_eq!(parsed.reads[0].dest_chain, ChainId(88888));
-        assert_eq!(parsed.reads[0].sender, caller);
-        assert_eq!(parsed.reads[0].receiver, caller);
-        assert_eq!(parsed.reads[0].label, "SEND");
+
+        let r = &parsed.reads[0];
+        assert_eq!(r.source_chain, ChainId(77777));
+        assert_eq!(r.dest_chain, ChainId(88888));
+        assert_eq!(r.sender, bridge_src);
+        assert_eq!(r.receiver, caller);
+        assert_eq!(r.label, "SEND_TOKENS");
+        assert_eq!(r.session_id, session_id);
+    }
+
+    #[test]
+    fn ignores_unknown_selector() {
+        let mailbox: Address = "0xe5d5d610fb9767df117f4076444b45404201a097"
+            .parse()
+            .unwrap();
+        let trace = json!({
+            "from": "0x1111111111111111111111111111111111111111",
+            "to": format!("{mailbox:#x}"),
+            "input": "0xdeadbeef00000000",
+        });
+
+        let parsed = parse_call_trace(&trace, mailbox, ChainId(1));
+        assert_eq!(parsed.reads.len(), 0);
+        assert_eq!(parsed.writes.len(), 0);
     }
 }

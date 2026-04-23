@@ -2,7 +2,7 @@
 
 use alloy::eips::{BlockId, Encodable2718};
 use alloy::network::TransactionBuilder;
-use alloy::primitives::{Address, U256};
+use alloy::primitives::Address;
 use alloy::providers::{DynProvider, Provider, ProviderBuilder};
 use alloy::rpc::types::TransactionRequest;
 use alloy::signers::local::PrivateKeySigner;
@@ -91,7 +91,7 @@ impl PutInboxBuilder for PutInboxTxBuilder {
         dep: &CrossRollupDependency,
         nonce: u64,
     ) -> Result<Vec<u8>, CoordinatorError> {
-        let session_id = dep.session_id.unwrap_or(U256::ZERO);
+        let session_id = dep.session_id;
         let data = dep.data.as_deref().unwrap_or_default();
         let calldata = abi::encode_put_inbox(
             dep.source_chain_id.0,
