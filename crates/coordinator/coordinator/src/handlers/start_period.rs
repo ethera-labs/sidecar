@@ -57,7 +57,7 @@ impl DefaultCoordinator {
             .await?;
         }
 
-        if let Err(e) = self.resync_put_inbox_nonce().await {
+        if let Err(e) = self.resync_put_inbox_nonce_monotonic().await {
             error!(error = %e, "Failed to resync putInbox nonce on period change");
             self.nonce_manager.reset().await;
         }

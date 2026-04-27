@@ -5,8 +5,8 @@ use alloy_rpc_types_eth::state::{AccountOverride, StateOverride};
 use compose_primitives::{ChainId, CrossRollupDependency};
 use std::collections::HashMap;
 
-const INBOX_MAPPING_SLOT: u64 = 4;
-const CREATED_KEYS_MAPPING_SLOT: u64 = 6;
+const INBOX_MAPPING_SLOT: u64 = 5;
+const CREATED_KEYS_MAPPING_SLOT: u64 = 7;
 
 /// Alloy's state-diff map type: B256 keys with a fixed-bytes hasher.
 type SlotMap = HashMap<B256, B256, FbBuildHasher<32>>;

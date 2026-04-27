@@ -155,6 +155,24 @@ impl DefaultCoordinator {
                             return;
                         }
 
+                        if !result.success
+                            && result.dependencies.iter().all(|dep| {
+                                fulfilled_deps
+                                    .iter()
+                                    .any(|fulfilled| dep_key(fulfilled) == dep_key(dep))
+                            })
+                        {
+                            warn!(
+                                instance_id,
+                                tx_index,
+                                error = ?result.error,
+                                dep_count = result.dependencies.len(),
+                                "Simulation failed after all mailbox dependencies were already fulfilled"
+                            );
+                            let _ = self.send_vote(instance_id, false).await;
+                            return;
+                        }
+
                         if result.success {
                             if let Err(e) = self
                                 .dispatch_outbound_mailbox(instance_id, &result.outbound_messages)
@@ -848,6 +866,53 @@ mod tests {
         }
     }
 
+    struct FailingAfterFulfilledDependencySimulator {
+        calls: AtomicUsize,
+        dependency: CrossRollupDependency,
+    }
+
+    #[async_trait]
+    impl Simulator for FailingAfterFulfilledDependencySimulator {
+        async fn simulate(
+            &self,
+            chain_id: ChainId,
+            tx: &[u8],
+            state_overrides: &StateOverride,
+        ) -> Result<SimulationResult, SimulationError> {
+            self.simulate_with_mailbox(chain_id, tx, state_overrides, &[])
+                .await
+        }
+
+        async fn simulate_with_mailbox(
+            &self,
+            _chain_id: ChainId,
+            _tx: &[u8],
+            _state_overrides: &StateOverride,
+            fulfilled_deps: &[CrossRollupDependency],
+        ) -> Result<SimulationResult, SimulationError> {
+            let call = self.calls.fetch_add(1, Ordering::SeqCst);
+            if call == 0 {
+                assert!(fulfilled_deps.is_empty());
+                Ok(SimulationResult {
+                    success: false,
+                    error: Some("missing mailbox".to_string()),
+                    state_overrides: None,
+                    dependencies: vec![self.dependency.clone()],
+                    outbound_messages: Vec::new(),
+                })
+            } else {
+                assert_eq!(fulfilled_deps.len(), 1);
+                Ok(SimulationResult {
+                    success: false,
+                    error: Some("out of gas".to_string()),
+                    state_overrides: None,
+                    dependencies: vec![self.dependency.clone()],
+                    outbound_messages: Vec::new(),
+                })
+            }
+        }
+    }
+
     #[tokio::test]
     async fn process_xt_votes_true_on_success_with_no_deps() {
         let simulator = Arc::new(StubSimulator { succeed: true });
@@ -1077,5 +1142,63 @@ mod tests {
             !seen[1].contains_key(&failed_addr),
             "retry should start from base overrides, not failed-trace post-state"
         );
+    }
+
+    #[tokio::test]
+    async fn process_xt_votes_false_immediately_when_failed_retry_only_has_fulfilled_deps() {
+        let dependency = CrossRollupDependency {
+            source_chain_id: ChainId(88888),
+            dest_chain_id: ChainId(77777),
+            sender: Address::repeat_byte(0x33),
+            receiver: Address::repeat_byte(0x44),
+            label: b"SEND".to_vec(),
+            data: None,
+            session_id: U256::ZERO,
+        };
+
+        let simulator = Arc::new(FailingAfterFulfilledDependencySimulator {
+            calls: AtomicUsize::new(0),
+            dependency: dependency.clone(),
+        });
+        let coordinator = DefaultCoordinator::new(
+            ChainId(77777),
+            Some(simulator.clone()),
+            None,
+            None,
+            None,
+            None,
+            10_000,
+            VerificationConfig::default(),
+        );
+
+        {
+            let mut state = coordinator.state.write().await;
+            let mut xt = PendingXt::new("xt-77777-14".to_string(), b"xt-77777-14".to_vec());
+            xt.raw_txs.insert(ChainId(77777), vec![vec![0xab, 0xcd]]);
+            xt.pending_mailbox.push(compose_proto::MailboxMessage {
+                source_chain: 88888,
+                destination_chain: 77777,
+                sender: Address::repeat_byte(0x33).as_slice().to_vec(),
+                receiver: Address::repeat_byte(0x44).as_slice().to_vec(),
+                label: "SEND".to_string(),
+                payload: vec![1, 2, 3],
+                session_id: U256::ZERO.to_be_bytes::<32>().to_vec(),
+                ..Default::default()
+            });
+            state.pending.insert(xt.id.clone(), xt);
+        }
+
+        tokio::time::timeout(
+            std::time::Duration::from_millis(500),
+            coordinator.process_xt("xt-77777-14"),
+        )
+        .await
+        .expect("process_xt should not wait for already-fulfilled deps");
+
+        let state = coordinator.state.read().await;
+        let xt = state.pending.get("xt-77777-14").unwrap();
+        assert_eq!(xt.local_vote, Some(false));
+        assert_eq!(xt.fulfilled_deps.len(), 1);
+        assert_eq!(simulator.calls.load(Ordering::SeqCst), 2);
     }
 }

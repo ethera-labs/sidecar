@@ -13,6 +13,8 @@ use reqwest::Url;
 
 use crate::abi;
 
+const PUT_INBOX_GAS_LIMIT: u64 = 2_000_000;
+
 /// Builds signed `putInbox` transactions for local dependency fulfillment.
 #[derive(Clone)]
 pub struct PutInboxTxBuilder {
@@ -108,7 +110,7 @@ impl PutInboxBuilder for PutInboxTxBuilder {
             .with_to(self.mailbox_address)
             .with_chain_id(self.chain_id.0)
             .with_nonce(nonce)
-            .gas_limit(500_000)
+            .gas_limit(PUT_INBOX_GAS_LIMIT)
             .with_input(calldata);
 
         let rpc_url: Url = self
