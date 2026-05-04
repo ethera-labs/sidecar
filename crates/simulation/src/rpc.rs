@@ -135,7 +135,14 @@ impl RpcSimulator {
             trace_opts = trace_opts.with_state_overrides(state_overrides.clone());
         }
 
-        let params = json!([tx_args, "latest", trace_opts]);
+        // Trace against the `pending` block tag: on op-rbuilder this resolves
+        // to the post-state of the most recently published flashblock, which
+        // is the pre-state under which the builder will execute the XT (the
+        // builder reserves the leading slot of every flashblock for released
+        // SCP instances). The `state_overrides` argument layers in chained
+        // XT post-states from earlier instances in the same period plus the
+        // mailbox writes injected for outstanding cross-rollup dependencies.
+        let params = json!([tx_args, "pending", trace_opts]);
 
         let body = json!({
             "jsonrpc": "2.0",
