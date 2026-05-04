@@ -25,7 +25,9 @@ pub fn matches_dependency(msg: &MailboxMessage, dep: &CrossRollupDependency) -> 
         return false;
     }
 
-    let msg_session_id = session_id_from_bytes(&msg.session_id);
+    let Some(msg_session_id) = session_id_from_bytes(&msg.session_id) else {
+        return false;
+    };
     if msg_session_id != dep.session_id {
         return false;
     }
@@ -59,13 +61,18 @@ pub fn contains_message(msgs: &[CrossRollupMessage], msg: &CrossRollupMessage) -
 }
 
 /// Decode a proto `session_id` bytes field (up to 32 bytes, big-endian) into `U256`.
-fn session_id_from_bytes(bytes: &[u8]) -> U256 {
+fn session_id_from_bytes(bytes: &[u8]) -> Option<U256> {
     if bytes.len() > 32 {
-        return U256::ZERO;
+        tracing::warn!(
+            session_id_len = bytes.len(),
+            max_session_id_len = 32,
+            "Malformed mailbox session_id bytes"
+        );
+        return None;
     }
     let mut buf = [0u8; 32];
     buf[32 - bytes.len()..].copy_from_slice(bytes);
-    U256::from_be_bytes(buf)
+    Some(U256::from_be_bytes(buf))
 }
 
 #[cfg(test)]
