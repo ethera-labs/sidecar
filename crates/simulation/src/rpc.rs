@@ -135,7 +135,12 @@ impl RpcSimulator {
             trace_opts = trace_opts.with_state_overrides(state_overrides.clone());
         }
 
-        let params = json!([tx_args, "latest", trace_opts]);
+        // Trace against `pending` so the simulation baseline matches the
+        // pre-state the builder will execute the XT against (the post-state
+        // of the most recently sealed flashblock). Chained XTs from earlier
+        // instances in the same period and mailbox writes for outstanding
+        // cross-rollup dependencies are layered on top via `state_overrides`.
+        let params = json!([tx_args, "pending", trace_opts]);
 
         let body = json!({
             "jsonrpc": "2.0",
