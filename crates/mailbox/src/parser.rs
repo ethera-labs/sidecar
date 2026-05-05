@@ -1,32 +1,13 @@
 //! Mailbox trace parsing from call tracer output.
 
 use alloy::primitives::Address;
-use alloy::sol;
 use alloy::sol_types::SolCall;
 use compose_primitives::ChainId;
 use serde_json::Value;
 use tracing::debug;
 
+use crate::contract::{calldata_selector, readMessageCall, writeMessageCall};
 use crate::types::{MailboxCall, MailboxCallType, SimulationState};
-
-sol! {
-    struct MessageHeader {
-        uint256 chainSrc;
-        uint256 chainDest;
-        address sender;
-        address receiver;
-        uint256 sessionId;
-        string label;
-    }
-
-    struct Message {
-        MessageHeader header;
-        bytes payload;
-    }
-
-    function writeMessage(Message message);
-    function readMessage(MessageHeader header) returns (bytes);
-}
 
 /// Parse mailbox read/write calls from a geth `callTracer` output.
 ///
@@ -55,19 +36,16 @@ fn walk_trace(
 
     if let Ok(to_addr) = to_str.parse::<Address>() {
         if to_addr == mailbox_address && input.len() >= 10 {
-            let selector = &input[..10];
+            let selector = calldata_selector(input);
 
-            let write_sel = format!("0x{}", hex::encode(writeMessageCall::SELECTOR));
-            let read_sel = format!("0x{}", hex::encode(readMessageCall::SELECTOR));
-
-            if selector == write_sel {
+            if selector == Some(writeMessageCall::SELECTOR) {
                 if let Some(caller) = from_addr {
                     if let Some(call) = decode_write(input, caller, local_chain_id) {
                         debug!(label = %call.label, "Parsed mailbox writeMessage call");
                         state.writes.push(call);
                     }
                 }
-            } else if selector == read_sel {
+            } else if selector == Some(readMessageCall::SELECTOR) {
                 if let Some(call) = decode_read(input, local_chain_id) {
                     debug!(label = %call.label, "Parsed mailbox readMessage call");
                     state.reads.push(call);
@@ -94,7 +72,7 @@ fn decode_write(input: &str, caller: Address, local_chain_id: ChainId) -> Option
     Some(MailboxCall {
         call_type: MailboxCallType::Write,
         source_chain: local_chain_id,
-        dest_chain: ChainId(header.chainDest.try_into().unwrap_or(0)),
+        dest_chain: ChainId(u64::try_from(header.chainDest).ok()?),
         sender: caller,
         receiver: header.receiver,
         label: header.label.clone(),
@@ -111,7 +89,7 @@ fn decode_read(input: &str, local_chain_id: ChainId) -> Option<MailboxCall> {
 
     Some(MailboxCall {
         call_type: MailboxCallType::Read,
-        source_chain: ChainId(header.chainSrc.try_into().unwrap_or(0)),
+        source_chain: ChainId(u64::try_from(header.chainSrc).ok()?),
         dest_chain: local_chain_id,
         sender: header.sender,
         receiver: header.receiver,
@@ -124,6 +102,7 @@ fn decode_read(input: &str, local_chain_id: ChainId) -> Option<MailboxCall> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::contract::{Message, MessageHeader};
     use alloy::primitives::U256;
     use serde_json::json;
 
@@ -260,6 +239,39 @@ mod tests {
         });
 
         let parsed = parse_call_trace(&trace, mailbox, ChainId(1));
+        assert_eq!(parsed.reads.len(), 0);
+        assert_eq!(parsed.writes.len(), 0);
+    }
+
+    #[test]
+    fn ignores_chain_ids_that_do_not_fit_u64() {
+        let mailbox: Address = "0xe5d5d610fb9767df117f4076444b45404201a097"
+            .parse()
+            .unwrap();
+        let caller: Address = "0xf5fe1b951c5cdf2d4299f8e63444ff621cd2fed9"
+            .parse()
+            .unwrap();
+        let receiver: Address = "0x4bcf3d44f2531497e82be4556f380b0a414aa9ce"
+            .parse()
+            .unwrap();
+
+        let call = readMessageCall {
+            header: MessageHeader {
+                chainSrc: U256::from(u64::MAX) + U256::from(1u64),
+                chainDest: U256::from(88888),
+                sender: caller,
+                receiver,
+                sessionId: U256::from(1u64),
+                label: "SEND_TOKENS".to_string(),
+            },
+        };
+        let trace = json!({
+            "from": format!("{caller:#x}"),
+            "to": format!("{mailbox:#x}"),
+            "input": format!("0x{}", hex::encode(call.abi_encode())),
+        });
+
+        let parsed = parse_call_trace(&trace, mailbox, ChainId(88888));
         assert_eq!(parsed.reads.len(), 0);
         assert_eq!(parsed.writes.len(), 0);
     }

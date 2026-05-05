@@ -67,7 +67,7 @@ crates/
     transport            — QUIC client/server, TLS (quinn + rustls + rcgen), framing
     publisher            — wraps QuicClient for SP communication
     peer                 — HTTP client for sidecar-to-sidecar coordination
-  mailbox               — mailbox ABI helpers, dependency matching, overrides, and in-memory queue
+  mailbox               — UniversalBridgeMailbox v2 ABI helpers, dependency matching, overrides, and in-memory queue
   simulation             — RPC-backed tx simulation (eth_call with state overrides)
   metrics                — Prometheus counters/histograms via prometheus-client
   tracing                — tracing-subscriber init (JSON or pretty output)
@@ -77,7 +77,7 @@ crates/
 
 1. **Submit** (`POST /xt`): XT arrives, fingerprinted and stored as `PendingXt`
 2. **Simulate** (`pipeline/simulation.rs`): eth_call against RPC with per-chain state overlays so XTs see each other's
-   effects
+   effects, tracing `writeMessage(Message)` and `readMessage(MessageHeader)` mailbox calls
 3. **Vote** (`handlers/peer_vote.rs`): peer sidecars exchange votes over HTTP (`POST /xt/vote`, `POST /xt/forward`)
 4. **Decide** (`decision/`): standalone (single sidecar) or consensus-based commit/abort
 5. **Reserve / Release**: sidecar pushes XT lifecycle events into the local builder

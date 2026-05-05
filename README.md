@@ -39,6 +39,9 @@ This is an active implementation of the Ethera protocol. It currently covers:
 - **SCP**: `StartInstance`, simulation with mailbox overlays, vote exchange, `Decided`, CIRC timer.
 - **SBCP**: `StartPeriod`, `Rollback`, instance sequentiality, period/superblock tracking.
 - **Standalone mode**: peer-to-peer vote aggregation without an SP.
+- **UniversalBridgeMailbox v2**: traces `writeMessage(Message)` / `readMessage(MessageHeader)`,
+  matches dependencies on the six-field mailbox key, and carries 256-bit session IDs as 32-byte
+  big-endian protobuf bytes.
 - **Builder integration**: pull-based `POST /transactions` hold/deliver flow for op-rbuilder with
   deferred nonce management for concurrent `putInbox` transactions.
 - **Verification hook**: optional external HTTP callout on inbound XTs before the commit vote.
@@ -166,8 +169,9 @@ The coordinator pipeline (`crates/coordinator/coordinator/src/pipeline`) maps on
 
 ### SBCP integration
 
-- `handlers/start_period.rs` tracks the current period and superblock number, resets per-period
-  state (including the nonce manager), and rejects stale instances.
+- `handlers/start_period.rs` tracks the current period and superblock number, clears per-period
+  state, resynchronizes the `putInbox` nonce view without reusing locally reserved nonces, and
+  rejects stale instances.
 - `handlers/start_instance.rs` enforces sequentiality (a chain cannot be in two instances
   concurrently) and drives the SCP state machine.
 - `handlers/rollback.rs` resets local state to the last finalized superblock and re-arms the
