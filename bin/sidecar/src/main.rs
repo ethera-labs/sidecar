@@ -12,7 +12,7 @@ use compose_coordinator::coordinator::{DefaultCoordinator, VerificationConfig};
 use compose_mailbox::put_inbox::PutInboxTxBuilder;
 use compose_mailbox::queue::InMemoryQueue;
 use compose_metrics::SidecarMetrics;
-use compose_peer::coordinator::{HttpPeerCoordinator, PeerEntry};
+use compose_peer::coordinator::{HttpPeerCoordinator, PeerEntry as RuntimePeerEntry};
 use compose_peer::sender::PeerMailboxSender;
 use compose_publisher::PublisherConnection;
 use compose_server::handlers::publisher::handle_publisher_message;
@@ -82,13 +82,14 @@ fn build_coordinator(
     }
 
     let has_rpc = !chain_rpc.is_empty();
-    let has_mailbox = !args.chain.mailbox_address.is_empty();
+    let universal_bridge_mailbox_address = &args.chain.universal_bridge_mailbox_address;
+    let has_mailbox = !universal_bridge_mailbox_address.is_empty();
     let has_key = !args.chain.coordinator_key.is_empty();
     if has_rpc && has_mailbox && has_key {
         match PutInboxTxBuilder::new(
             chain_id,
             chain_rpc.to_string(),
-            args.chain.mailbox_address.clone(),
+            universal_bridge_mailbox_address.clone(),
             args.chain.coordinator_key.clone(),
         ) {
             Ok(put_inbox) => {
@@ -113,8 +114,8 @@ fn build_coordinator(
             rpc_url: args.chain.rpc.clone(),
         }];
         let mut sim = RpcSimulator::new(rpc_chains);
-        if !args.chain.mailbox_address.is_empty() {
-            if let Ok(addr) = args.chain.mailbox_address.parse() {
+        if !universal_bridge_mailbox_address.is_empty() {
+            if let Ok(addr) = universal_bridge_mailbox_address.parse() {
                 sim = sim.with_mailbox_address(addr);
             }
         }
@@ -129,11 +130,11 @@ fn build_coordinator(
         timeout_ms: args.verification.timeout_ms,
     });
 
-    let peer_entries = args.peers.to_entries();
+    let peer_entries = args.peers.entries()?;
     if !peer_entries.is_empty() {
-        let peers: Vec<PeerEntry> = peer_entries
+        let peers: Vec<RuntimePeerEntry> = peer_entries
             .iter()
-            .map(|p| PeerEntry {
+            .map(|p| RuntimePeerEntry {
                 chain_id: p.chain_id,
                 addr: p.addr.clone(),
             })
@@ -141,9 +142,9 @@ fn build_coordinator(
         let pc = Arc::new(HttpPeerCoordinator::new(peers));
         builder = builder.peer_coordinator(pc);
 
-        let mailbox_peers: Vec<PeerEntry> = peer_entries
+        let mailbox_peers: Vec<RuntimePeerEntry> = peer_entries
             .iter()
-            .map(|p| PeerEntry {
+            .map(|p| RuntimePeerEntry {
                 chain_id: p.chain_id,
                 addr: p.addr.clone(),
             })

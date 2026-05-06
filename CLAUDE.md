@@ -85,16 +85,16 @@ crates/
 
 ### HTTP API Routes
 
-| Route                   | Purpose                              |
-|-------------------------|--------------------------------------|
-| `POST /xt`              | Submit a cross-chain transaction     |
-| `GET /xt/:id`           | Get XT status                        |
-| `POST /xt/forward`      | Peer forwarding                      |
-| `POST /xt/vote`         | Peer vote exchange                   |
-| `POST /mailbox`         | Peer mailbox messages                |
-| `POST /ethera/confirm`  | Builder inclusion confirmation       |
-| `GET /health`, `/ready` | Liveness/readiness                   |
-| `GET /metrics`          | Prometheus metrics                   |
+| Route                   | Purpose                          |
+|-------------------------|----------------------------------|
+| `POST /xt`              | Submit a cross-chain transaction |
+| `GET /xt/:id`           | Get XT status                    |
+| `POST /xt/forward`      | Peer forwarding                  |
+| `POST /xt/vote`         | Peer vote exchange               |
+| `POST /mailbox`         | Peer mailbox messages            |
+| `POST /ethera/confirm`  | Builder inclusion confirmation   |
+| `GET /health`, `/ready` | Liveness/readiness               |
+| `GET /metrics`          | Prometheus metrics               |
 
 ### Publisher (QUIC / SP)
 
@@ -104,5 +104,6 @@ state machine.
 
 ### Configuration
 
-Config is via CLI flags or `SIDECAR_*` env vars (no config file loading at runtime). See `configs/config.example.yaml`
-for the full set of options. Key sections: `server`, `publisher`, `chains`, `peers`, `log`.
+Config is via CLI flags or `SIDECAR_*` env vars (no config file loading at runtime). Peer sidecars are keyed by chain ID
+through `SIDECAR_PEERS=CHAIN_ID=URL[,CHAIN_ID=URL]`; the mailbox contract is configured with
+`SIDECAR_UNIVERSAL_BRIDGE_MAILBOX_ADDRESS`.

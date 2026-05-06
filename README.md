@@ -73,8 +73,7 @@ Minimal standalone run:
 ```sh
 SIDECAR_CHAIN_ID=901 \
 SIDECAR_CHAIN_RPC=http://localhost:8545 \
-SIDECAR_PEER_A_ADDR=http://sidecar-b:8080 \
-SIDECAR_PEER_A_CHAIN_ID=902 \
+SIDECAR_PEERS=902=http://sidecar-b:8080 \
 just run
 ```
 
@@ -90,14 +89,15 @@ just run
 
 Key configuration groups:
 
-| Prefix                   | Purpose                                                   |
-|--------------------------|-----------------------------------------------------------|
-| `SIDECAR_LISTEN_ADDR`    | HTTP listener address                                     |
-| `SIDECAR_CHAIN_*`        | Local chain: id, RPC, mailbox address, coordinator key    |
-| `SIDECAR_PUBLISHER_*`    | SP QUIC endpoint and reconnection policy                  |
-| `SIDECAR_PEER_{A..D}_*`  | Up to four peer sidecar slots (address + chain id)        |
-| `SIDECAR_VERIFICATION_*` | External verification hook for inbound XTs                |
-| `SIDECAR_LOG_*`          | Log level (`debug`/`info`/…) and format (`json`/`pretty`) |
+| Prefix                                     | Purpose                                                   |
+|--------------------------------------------|-----------------------------------------------------------|
+| `SIDECAR_LISTEN_ADDR`                      | HTTP listener address                                     |
+| `SIDECAR_CHAIN_*`                          | Local chain: id, RPC, builder RPC, coordinator key        |
+| `SIDECAR_UNIVERSAL_BRIDGE_MAILBOX_ADDRESS` | UniversalBridgeMailbox contract address                   |
+| `SIDECAR_PUBLISHER_*`                      | SP QUIC endpoint and reconnection policy                  |
+| `SIDECAR_PEERS`                            | Comma-delimited peer map: `CHAIN_ID=URL[,CHAIN_ID=URL]`   |
+| `SIDECAR_VERIFICATION_*`                   | External verification hook for inbound XTs                |
+| `SIDECAR_LOG_*`                            | Log level (`debug`/`info`/…) and format (`json`/`pretty`) |
 
 ## Testing
 
