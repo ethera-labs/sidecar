@@ -1,4 +1,4 @@
-//! `UniversalBridgeMailbox` v2 ABI bindings and calldata helpers.
+//! `UniversalBridgeMailbox` ABI bindings and calldata helpers.
 
 use alloy::sol;
 

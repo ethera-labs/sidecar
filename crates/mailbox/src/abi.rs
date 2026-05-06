@@ -31,7 +31,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn encode_put_inbox_round_trips_v2_fields() {
+    fn encode_put_inbox_round_trips_fields() {
         let session_id = U256::from(42u64);
         let data = encode_put_inbox(
             901,

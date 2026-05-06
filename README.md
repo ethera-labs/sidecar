@@ -39,7 +39,7 @@ This is an active implementation of the Ethera protocol. It currently covers:
 - **SCP**: `StartInstance`, simulation with mailbox overlays, vote exchange, `Decided`, CIRC timer.
 - **SBCP**: `StartPeriod`, `Rollback`, instance sequentiality, period/superblock tracking.
 - **Standalone mode**: peer-to-peer vote aggregation without an SP.
-- **UniversalBridgeMailbox v2**: traces `writeMessage(Message)` / `readMessage(MessageHeader)`,
+- **UniversalBridgeMailbox**: traces `writeMessage(Message)` / `readMessage(MessageHeader)`,
   matches dependencies on the six-field mailbox key, and carries 256-bit session IDs as 32-byte
   big-endian protobuf bytes.
 - **Builder integration**: pull-based `POST /transactions` hold/deliver flow for op-rbuilder with

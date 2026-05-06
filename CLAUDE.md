@@ -67,7 +67,7 @@ crates/
     transport            — QUIC client/server, TLS (quinn + rustls + rcgen), framing
     publisher            — wraps QuicClient for SP communication
     peer                 — HTTP client for sidecar-to-sidecar coordination
-  mailbox               — UniversalBridgeMailbox v2 ABI helpers, dependency matching, overrides, and in-memory queue
+  mailbox               — UniversalBridgeMailbox ABI helpers, dependency matching, overrides, and in-memory queue
   simulation             — RPC-backed tx simulation (eth_call with state overrides)
   metrics                — Prometheus counters/histograms via prometheus-client
   tracing                — tracing-subscriber init (JSON or pretty output)
