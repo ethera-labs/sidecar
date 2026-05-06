@@ -1,24 +1,12 @@
 //! Mailbox ABI encoding utilities.
 
 use alloy::primitives::{Address, U256};
-use alloy::sol;
 use alloy::sol_types::SolCall;
 
+use crate::contract::putInboxCall;
 use crate::error::MailboxError;
 
-// Generate the ABI bindings for the Mailbox contract's putInbox function.
-sol! {
-    function putInbox(
-        uint256 chainMessageSender,
-        address sender,
-        address receiver,
-        uint256 sessionId,
-        bytes label,
-        bytes data
-    );
-}
-
-/// Encode a `putInbox` call for the Mailbox contract.
+/// Encode a `putInbox` call for the `UniversalBridgeMailbox` contract.
 pub fn encode_put_inbox(
     source_chain_id: u64,
     sender: Address,
@@ -32,7 +20,7 @@ pub fn encode_put_inbox(
         sender,
         receiver,
         sessionId: session_id,
-        label: label.to_vec().into(),
+        label: String::from_utf8_lossy(label).to_string(),
         data: data.to_vec().into(),
     };
     Ok(call.abi_encode())
@@ -43,17 +31,22 @@ mod tests {
     use super::*;
 
     #[test]
-    fn encode_put_inbox_produces_valid_calldata() {
+    fn encode_put_inbox_round_trips_fields() {
+        let session_id = U256::from(42u64);
         let data = encode_put_inbox(
             901,
             Address::ZERO,
             Address::ZERO,
-            U256::ZERO,
-            b"test",
+            session_id,
+            b"SEND_TOKENS",
             b"hello",
         )
         .unwrap();
-        // Function selector (4 bytes) + encoded params
-        assert!(data.len() > 4);
+
+        let decoded = putInboxCall::abi_decode(&data).unwrap();
+        assert_eq!(decoded.chainMessageSender, U256::from(901u64));
+        assert_eq!(decoded.sessionId, session_id);
+        assert_eq!(decoded.label, "SEND_TOKENS");
+        assert_eq!(decoded.data.as_ref(), b"hello");
     }
 }

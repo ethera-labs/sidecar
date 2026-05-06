@@ -217,7 +217,7 @@ pub struct CrossRollupDependency {
     pub receiver: Address,
     pub label: Vec<u8>,
     pub data: Option<Vec<u8>>,
-    pub session_id: Option<U256>,
+    pub session_id: U256,
 }
 
 /// A cross-rollup outbound message (mailbox write).
@@ -229,7 +229,7 @@ pub struct CrossRollupMessage {
     pub receiver: Address,
     pub label: String,
     pub data: Vec<u8>,
-    pub session_id: Option<U256>,
+    pub session_id: U256,
 }
 
 /// Result of simulating a transaction.

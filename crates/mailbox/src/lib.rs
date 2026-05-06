@@ -4,6 +4,7 @@
 //! abstractions, and trace parsing.
 
 pub mod abi;
+pub mod contract;
 pub mod error;
 pub mod matching;
 pub mod overrides;
@@ -12,3 +13,4 @@ pub mod put_inbox;
 pub mod queue;
 pub mod traits;
 pub mod types;
+pub mod wire;

@@ -2,7 +2,7 @@
 
 use alloy::eips::{BlockId, Encodable2718};
 use alloy::network::TransactionBuilder;
-use alloy::primitives::{Address, U256};
+use alloy::primitives::Address;
 use alloy::providers::{DynProvider, Provider, ProviderBuilder};
 use alloy::rpc::types::TransactionRequest;
 use alloy::signers::local::PrivateKeySigner;
@@ -12,6 +12,8 @@ use compose_primitives_traits::{CoordinatorError, PutInboxBuilder};
 use reqwest::Url;
 
 use crate::abi;
+
+const PUT_INBOX_GAS_LIMIT: u64 = 2_000_000;
 
 /// Builds signed `putInbox` transactions for local dependency fulfillment.
 #[derive(Clone)]
@@ -91,7 +93,7 @@ impl PutInboxBuilder for PutInboxTxBuilder {
         dep: &CrossRollupDependency,
         nonce: u64,
     ) -> Result<Vec<u8>, CoordinatorError> {
-        let session_id = dep.session_id.unwrap_or(U256::ZERO);
+        let session_id = dep.session_id;
         let data = dep.data.as_deref().unwrap_or_default();
         let calldata = abi::encode_put_inbox(
             dep.source_chain_id.0,
@@ -108,7 +110,7 @@ impl PutInboxBuilder for PutInboxTxBuilder {
             .with_to(self.mailbox_address)
             .with_chain_id(self.chain_id.0)
             .with_nonce(nonce)
-            .gas_limit(500_000)
+            .gas_limit(PUT_INBOX_GAS_LIMIT)
             .with_input(calldata);
 
         let rpc_url: Url = self
