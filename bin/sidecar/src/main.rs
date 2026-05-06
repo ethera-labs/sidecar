@@ -70,13 +70,14 @@ fn build_coordinator(
 
     let mut builder = CoordinatorBuilder::new(chain_id).metrics(metrics);
     let chain_rpc = &args.chain.rpc;
-    if !chain_rpc.is_empty() {
-        match HttpXtBuilderClient::new(chain_rpc.to_string()) {
+    let builder_rpc = args.chain.builder_rpc_url();
+    if !builder_rpc.is_empty() {
+        match HttpXtBuilderClient::new(builder_rpc.to_string()) {
             Ok(client) => {
                 builder = builder.xt_builder_client(Arc::new(client));
             }
             Err(e) => {
-                warn!(error = %e, endpoint = chain_rpc, "Failed to configure builder control client");
+                warn!(error = %e, endpoint = builder_rpc, "Failed to configure builder control client");
             }
         }
     }
@@ -107,10 +108,10 @@ fn build_coordinator(
         );
     }
 
-    if !args.chain.rpc.is_empty() {
+    if !builder_rpc.is_empty() {
         let rpc_chains = vec![ChainRpcConfig {
             chain_id,
-            rpc_url: args.chain.rpc.clone(),
+            rpc_url: builder_rpc.to_string(),
         }];
         let mut sim = RpcSimulator::new(rpc_chains);
         if !args.chain.mailbox_address.is_empty() {
