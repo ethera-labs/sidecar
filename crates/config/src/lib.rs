@@ -111,7 +111,7 @@ pub struct ChainArgs {
     #[arg(long = "chain.rpc", env = "SIDECAR_CHAIN_RPC", default_value = "")]
     pub rpc: String,
 
-    /// Builder RPC endpoint used for XT lifecycle control.
+    /// Builder RPC endpoint used for XT lifecycle control and simulation.
     /// Falls back to `chain.rpc` when unset.
     #[arg(
         long = "chain.builder-rpc",
@@ -342,5 +342,17 @@ mod tests {
     fn builder_rpc_falls_back_to_chain_rpc() {
         let args = SidecarArgs::parse_from(["sidecar", "--chain.rpc", "http://localhost:8545"]);
         assert_eq!(args.chain.builder_rpc_url(), "http://localhost:8545");
+    }
+
+    #[test]
+    fn builder_rpc_overrides_chain_rpc() {
+        let args = SidecarArgs::parse_from([
+            "sidecar",
+            "--chain.rpc",
+            "http://op-geth:8545",
+            "--chain.builder-rpc",
+            "http://op-rbuilder:8545",
+        ]);
+        assert_eq!(args.chain.builder_rpc_url(), "http://op-rbuilder:8545");
     }
 }

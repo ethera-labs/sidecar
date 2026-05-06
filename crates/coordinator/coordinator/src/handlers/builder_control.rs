@@ -158,6 +158,19 @@ impl DefaultCoordinator {
             .await
     }
 
+    pub(crate) async fn resync_put_inbox_nonce_monotonic(&self) -> Result<(), CoordinatorError> {
+        let Some(builder) = self.put_inbox_builder.as_ref().cloned() else {
+            return Ok(());
+        };
+
+        self.nonce_manager
+            .resync_monotonic(move || {
+                let builder = builder.clone();
+                async move { builder.canonical_nonce_at().await }
+            })
+            .await
+    }
+
     pub(crate) async fn apply_builder_command(
         &self,
         command: XtBuilderCommand,
@@ -391,5 +404,40 @@ mod tests {
             .unwrap();
 
         assert_eq!(transactions, vec![11_u64.to_be_bytes().to_vec()]);
+    }
+
+    #[tokio::test]
+    async fn monotonic_resync_keeps_locally_reserved_put_inbox_nonce() {
+        let mut coordinator = DefaultCoordinator::new(
+            ChainId(77777),
+            None,
+            None,
+            None,
+            None,
+            None,
+            1000,
+            VerificationConfig::default(),
+        );
+        let builder = Arc::new(TestPutInboxBuilder::new(7));
+        coordinator.set_put_inbox_builder(builder.clone());
+
+        let transactions = coordinator
+            .build_put_inbox_transactions(&[test_dependency(), test_dependency()])
+            .await
+            .unwrap();
+        assert_eq!(transactions[0], 7_u64.to_be_bytes().to_vec());
+        assert_eq!(transactions[1], 8_u64.to_be_bytes().to_vec());
+
+        builder.set_canonical_nonce(8).await;
+        coordinator
+            .resync_put_inbox_nonce_monotonic()
+            .await
+            .unwrap();
+
+        let transactions = coordinator
+            .build_put_inbox_transactions(&[test_dependency()])
+            .await
+            .unwrap();
+        assert_eq!(transactions, vec![9_u64.to_be_bytes().to_vec()]);
     }
 }

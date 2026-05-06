@@ -727,6 +727,7 @@ mod tests {
 
         let mut txs = HashMap::new();
         txs.insert(ChainId(77777), vec![vec![0x01, 0x02, 0x03]]);
+        txs.insert(ChainId(88888), vec![vec![0x04, 0x05, 0x06]]);
         let fingerprint = xt_request_fingerprint(&build_xt_request(&txs));
 
         let coordinator_a = coordinator.clone();
