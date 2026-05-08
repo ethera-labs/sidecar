@@ -13,6 +13,19 @@ pub fn matches_dependency(msg: &MailboxMessage, dep: &CrossRollupDependency) -> 
     if ChainId(msg.destination_chain) != dep.dest_chain_id {
         return false;
     }
+    if msg.source.as_slice() != dep.sender.as_slice() {
+        return false;
+    }
+    if msg.receiver.as_slice() != dep.receiver.as_slice() {
+        return false;
+    }
+    let dep_session_id = dep
+        .session_id
+        .map(|value| value.try_into().unwrap_or(0u64))
+        .unwrap_or_default();
+    if msg.session_id != dep_session_id {
+        return false;
+    }
 
     let label_bytes = dep.label.as_slice();
     if msg.label.as_bytes() != label_bytes {
@@ -25,9 +38,12 @@ pub fn matches_dependency(msg: &MailboxMessage, dep: &CrossRollupDependency) -> 
 /// Generate a deduplication key for a dependency.
 pub fn dep_key(dep: &CrossRollupDependency) -> String {
     format!(
-        "{}:{}:{}",
+        "{}:{}:{}:{}:{}:{}",
         dep.source_chain_id,
         dep.dest_chain_id,
+        hex::encode(dep.sender.as_slice()),
+        hex::encode(dep.receiver.as_slice()),
+        dep.session_id.unwrap_or_default(),
         hex::encode(&dep.label)
     )
 }
@@ -49,13 +65,16 @@ pub fn contains_message(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use alloy::primitives::Address;
+    use alloy::primitives::{Address, U256};
 
     #[test]
     fn matching_message() {
         let msg = MailboxMessage {
             source_chain: 901,
             destination_chain: 902,
+            source: vec![0u8; 20],
+            receiver: vec![0u8; 20],
+            session_id: 42,
             label: "transfer".to_string(),
             ..Default::default()
         };
@@ -66,7 +85,7 @@ mod tests {
             receiver: Address::ZERO,
             label: b"transfer".to_vec(),
             data: None,
-            session_id: None,
+            session_id: Some(U256::from(42u64)),
         };
         assert!(matches_dependency(&msg, &dep));
     }
@@ -76,6 +95,9 @@ mod tests {
         let msg = MailboxMessage {
             source_chain: 901,
             destination_chain: 903,
+            source: vec![0u8; 20],
+            receiver: vec![0u8; 20],
+            session_id: 42,
             label: "transfer".to_string(),
             ..Default::default()
         };
@@ -86,7 +108,30 @@ mod tests {
             receiver: Address::ZERO,
             label: b"transfer".to_vec(),
             data: None,
-            session_id: None,
+            session_id: Some(U256::from(42u64)),
+        };
+        assert!(!matches_dependency(&msg, &dep));
+    }
+
+    #[test]
+    fn non_matching_session() {
+        let msg = MailboxMessage {
+            source_chain: 901,
+            destination_chain: 902,
+            source: vec![0u8; 20],
+            receiver: vec![0u8; 20],
+            session_id: 41,
+            label: "transfer".to_string(),
+            ..Default::default()
+        };
+        let dep = CrossRollupDependency {
+            source_chain_id: ChainId(901),
+            dest_chain_id: ChainId(902),
+            sender: Address::ZERO,
+            receiver: Address::ZERO,
+            label: b"transfer".to_vec(),
+            data: None,
+            session_id: Some(U256::from(42u64)),
         };
         assert!(!matches_dependency(&msg, &dep));
     }

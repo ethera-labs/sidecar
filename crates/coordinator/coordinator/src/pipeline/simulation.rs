@@ -829,8 +829,11 @@ mod tests {
             let mut xt = PendingXt::new("xt-77777-13".to_string(), b"xt-77777-13".to_vec());
             xt.raw_txs.insert(ChainId(77777), vec![vec![0xab, 0xcd]]);
             xt.pending_mailbox.push(compose_proto::MailboxMessage {
+                session_id: 0,
                 source_chain: 88888,
                 destination_chain: 77777,
+                source: dependency.sender.as_slice().to_vec(),
+                receiver: dependency.receiver.as_slice().to_vec(),
                 label: "SEND".to_string(),
                 data: vec![vec![1, 2, 3]],
                 ..Default::default()

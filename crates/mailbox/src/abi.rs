@@ -13,7 +13,7 @@ sol! {
         address sender,
         address receiver,
         uint256 sessionId,
-        bytes label,
+        string label,
         bytes data
     );
 }
@@ -32,7 +32,7 @@ pub fn encode_put_inbox(
         sender,
         receiver,
         sessionId: session_id,
-        label: label.to_vec().into(),
+        label: String::from_utf8_lossy(label).to_string(),
         data: data.to_vec().into(),
     };
     Ok(call.abi_encode())
