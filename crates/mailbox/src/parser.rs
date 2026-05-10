@@ -63,8 +63,11 @@ fn walk_trace(
 
 /// Decode a `writeMessage(Message)` call.
 ///
-/// The on-chain key uses `msg.sender` (= `caller`) as the sender, not `header.sender`.
-fn decode_write(input: &str, caller: Address, local_chain_id: ChainId) -> Option<MailboxCall> {
+/// UniversalBridgeMailbox keys messages from the explicit header fields.
+/// For bridge ACK flows the header sender can differ from the bridge contract
+/// caller, and simulation must preserve that sender so later `readMessage`
+/// dependencies can match it.
+fn decode_write(input: &str, _caller: Address, local_chain_id: ChainId) -> Option<MailboxCall> {
     let data = hex::decode(input.trim_start_matches("0x")).ok()?;
     let call = writeMessageCall::abi_decode(&data).ok()?;
     let header = &call.message.header;
@@ -73,7 +76,7 @@ fn decode_write(input: &str, caller: Address, local_chain_id: ChainId) -> Option
         call_type: MailboxCallType::Write,
         source_chain: local_chain_id,
         dest_chain: ChainId(u64::try_from(header.chainDest).ok()?),
-        sender: caller,
+        sender: header.sender,
         receiver: header.receiver,
         label: header.label.clone(),
         data: call.message.payload.to_vec(),
@@ -191,6 +194,50 @@ mod tests {
         assert_eq!(w.label, "SEND_TOKENS");
         assert_eq!(w.session_id, session_id);
         assert_eq!(w.data, b"payload");
+    }
+
+    #[test]
+    fn parses_write_call_trace_uses_header_sender_when_caller_differs() {
+        let mailbox: Address = "0xe5d5d610fb9767df117f4076444b45404201a097"
+            .parse()
+            .unwrap();
+        let caller: Address = "0x6e166073b5dd5fd53b33fed5a7bd9c104c6c6ebd"
+            .parse()
+            .unwrap();
+        let header_sender: Address = "0xeb36ab1a849656343739ff6364e62387f5af7137"
+            .parse()
+            .unwrap();
+        let receiver: Address = "0x6e166073b5dd5fd53b33fed5a7bd9c104c6c6ebd"
+            .parse()
+            .unwrap();
+        let session_id = U256::from(1u64);
+
+        let call = writeMessageCall {
+            message: Message {
+                header: MessageHeader {
+                    chainSrc: U256::from(200005u64),
+                    chainDest: U256::from(100003u64),
+                    sender: header_sender,
+                    receiver,
+                    sessionId: session_id,
+                    label: "ACK".to_string(),
+                },
+                payload: Vec::<u8>::new().into(),
+            },
+        };
+        let trace = json!({
+            "from": format!("{caller:#x}"),
+            "to": format!("{mailbox:#x}"),
+            "input": format!("0x{}", hex::encode(call.abi_encode())),
+        });
+
+        let parsed = parse_call_trace(&trace, mailbox, ChainId(200005));
+        assert_eq!(parsed.writes.len(), 1);
+        let w = &parsed.writes[0];
+        assert_eq!(w.sender, header_sender);
+        assert_eq!(w.receiver, receiver);
+        assert_eq!(w.label, "ACK");
+        assert_eq!(w.session_id, session_id);
     }
 
     #[test]
