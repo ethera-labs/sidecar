@@ -39,6 +39,9 @@ This is an active implementation of the Ethera protocol. It currently covers:
 - **SCP**: `StartInstance`, simulation with mailbox overlays, vote exchange, `Decided`, CIRC timer.
 - **SBCP**: `StartPeriod`, `Rollback`, instance sequentiality, period/superblock tracking.
 - **Standalone mode**: peer-to-peer vote aggregation without an SP.
+- **UniversalBridgeMailbox**: traces `writeMessage(Message)` / `readMessage(MessageHeader)`,
+  matches dependencies on the six-field mailbox key, and carries 256-bit session IDs as 32-byte
+  big-endian protobuf bytes.
 - **Builder integration**: pull-based `POST /transactions` hold/deliver flow for op-rbuilder with
   deferred nonce management for concurrent `putInbox` transactions.
 - **Verification hook**: optional external HTTP callout on inbound XTs before the commit vote.
@@ -70,8 +73,7 @@ Minimal standalone run:
 ```sh
 SIDECAR_CHAIN_ID=901 \
 SIDECAR_CHAIN_RPC=http://localhost:8545 \
-SIDECAR_PEER_A_ADDR=http://sidecar-b:8080 \
-SIDECAR_PEER_A_CHAIN_ID=902 \
+SIDECAR_PEERS=902=http://sidecar-b:8080 \
 just run
 ```
 
@@ -87,14 +89,15 @@ just run
 
 Key configuration groups:
 
-| Prefix                   | Purpose                                                   |
-|--------------------------|-----------------------------------------------------------|
-| `SIDECAR_LISTEN_ADDR`    | HTTP listener address                                     |
-| `SIDECAR_CHAIN_*`        | Local chain: id, RPC, mailbox address, coordinator key    |
-| `SIDECAR_PUBLISHER_*`    | SP QUIC endpoint and reconnection policy                  |
-| `SIDECAR_PEER_{A..D}_*`  | Up to four peer sidecar slots (address + chain id)        |
-| `SIDECAR_VERIFICATION_*` | External verification hook for inbound XTs                |
-| `SIDECAR_LOG_*`          | Log level (`debug`/`info`/…) and format (`json`/`pretty`) |
+| Prefix                                     | Purpose                                                   |
+|--------------------------------------------|-----------------------------------------------------------|
+| `SIDECAR_LISTEN_ADDR`                      | HTTP listener address                                     |
+| `SIDECAR_CHAIN_*`                          | Local chain: id, RPC, builder RPC, coordinator key        |
+| `SIDECAR_UNIVERSAL_BRIDGE_MAILBOX_ADDRESS` | UniversalBridgeMailbox contract address                   |
+| `SIDECAR_PUBLISHER_*`                      | SP QUIC endpoint and reconnection policy                  |
+| `SIDECAR_PEERS`                            | Comma-delimited peer map: `CHAIN_ID=URL[,CHAIN_ID=URL]`   |
+| `SIDECAR_VERIFICATION_*`                   | External verification hook for inbound XTs                |
+| `SIDECAR_LOG_*`                            | Log level (`debug`/`info`/…) and format (`json`/`pretty`) |
 
 ## Testing
 
@@ -166,8 +169,9 @@ The coordinator pipeline (`crates/coordinator/coordinator/src/pipeline`) maps on
 
 ### SBCP integration
 
-- `handlers/start_period.rs` tracks the current period and superblock number, resets per-period
-  state (including the nonce manager), and rejects stale instances.
+- `handlers/start_period.rs` tracks the current period and superblock number, clears per-period
+  state, resynchronizes the `putInbox` nonce view without reusing locally reserved nonces, and
+  rejects stale instances.
 - `handlers/start_instance.rs` enforces sequentiality (a chain cannot be in two instances
   concurrently) and drives the SCP state machine.
 - `handlers/rollback.rs` resets local state to the last finalized superblock and re-arms the

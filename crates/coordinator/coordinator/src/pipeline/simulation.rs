@@ -2,8 +2,11 @@
 
 use std::time::{Duration, Instant as StdInstant};
 
-use compose_mailbox::matching::{contains_message, dep_key, matches_dependency};
+use compose_mailbox::matching::{
+    contains_message, dependency_keys_equal, matches_dependency, DependencyKey, MailboxMessageKey,
+};
 use compose_mailbox::overrides::merge_overrides;
+use compose_mailbox::wire;
 use compose_primitives::{ChainId, CrossRollupDependency, CrossRollupMessage, StateOverride};
 use compose_proto::MailboxMessage;
 use serde::Serialize;
@@ -12,19 +15,6 @@ use tracing::{debug, error, info, warn};
 
 use crate::coordinator::DefaultCoordinator;
 use crate::model::chain_overlay::ChainOverlay;
-
-/// Canonical dedup key for a sent mailbox message.
-fn mailbox_message_key(msg: &MailboxMessage) -> String {
-    format!(
-        "{}:{}:{}:{}:{}:{}",
-        hex::encode(&msg.instance_id),
-        msg.source_chain,
-        msg.destination_chain,
-        hex::encode(&msg.source),
-        hex::encode(&msg.receiver),
-        msg.label,
-    )
-}
 
 #[derive(Debug, Serialize)]
 struct VerificationPayload<'a> {
@@ -158,7 +148,7 @@ impl DefaultCoordinator {
                             && result.dependencies.iter().all(|dep| {
                                 fulfilled_deps
                                     .iter()
-                                    .any(|fulfilled| dep_key(fulfilled) == dep_key(dep))
+                                    .any(|fulfilled| dependency_keys_equal(fulfilled, dep))
                             })
                         {
                             warn!(
@@ -324,7 +314,7 @@ impl DefaultCoordinator {
         }
 
         for dep in &result.dependencies {
-            let key = dep_key(dep);
+            let key = DependencyKey::from(dep);
             if xt.dep_keys.insert(key) {
                 xt.dependencies.push(dep.clone());
             }
@@ -412,7 +402,7 @@ impl DefaultCoordinator {
         };
 
         for dep in deps {
-            let key = dep_key(dep);
+            let key = DependencyKey::from(dep);
             if xt.fulfilled_dep_keys.contains(&key) {
                 continue;
             }
@@ -424,7 +414,7 @@ impl DefaultCoordinator {
             {
                 let mailbox_msg = xt.pending_mailbox.remove(idx);
                 let mut fulfilled = dep.clone();
-                fulfilled.data = mailbox_msg.data.first().cloned();
+                fulfilled.data = Some(mailbox_msg.payload.clone());
                 xt.fulfilled_dep_keys.insert(key);
                 xt.fulfilled_deps.push(fulfilled);
                 added += 1;
@@ -468,23 +458,18 @@ impl DefaultCoordinator {
             };
 
             for msg in outbound_messages {
-                let session_id = msg
-                    .session_id
-                    .and_then(|id| u64::try_from(id).ok())
-                    .unwrap_or_default();
-
                 let mailbox_msg = MailboxMessage {
                     instance_id: xt.instance_id.clone(),
                     source_chain: msg.source_chain_id.0,
                     destination_chain: msg.dest_chain_id.0,
-                    source: msg.sender.as_slice().to_vec(),
+                    sender: msg.sender.as_slice().to_vec(),
                     receiver: msg.receiver.as_slice().to_vec(),
                     label: msg.label.clone(),
-                    data: vec![msg.data.clone()],
-                    session_id,
+                    payload: msg.data.clone(),
+                    session_id: wire::encode_session_id(msg.session_id),
                 };
 
-                let key = mailbox_message_key(&mailbox_msg);
+                let key = MailboxMessageKey::from(&mailbox_msg);
                 if xt.sent_mailbox_keys.insert(key) {
                     xt.sent_mailbox.push(mailbox_msg.clone());
                     to_send.push(mailbox_msg);
@@ -614,9 +599,11 @@ impl DefaultCoordinator {
 #[cfg(test)]
 mod tests {
     use alloy::primitives::Address;
+    use alloy::primitives::U256;
     use alloy_rpc_types_eth::state::AccountOverride;
     use async_trait::async_trait;
     use axum::{extract::State, http::StatusCode, routing::post, Router};
+    use compose_mailbox::wire;
     use compose_primitives::ChainId;
     use compose_primitives::StateOverride;
     use compose_primitives::{CrossRollupDependency, SimulationResult};
@@ -1081,7 +1068,7 @@ mod tests {
             receiver: Address::repeat_byte(0x44),
             label: b"SEND".to_vec(),
             data: None,
-            session_id: None,
+            session_id: U256::ZERO,
         };
 
         let simulator = Arc::new(RetryRecordingSimulator {
@@ -1124,8 +1111,11 @@ mod tests {
             xt.pending_mailbox.push(compose_proto::MailboxMessage {
                 source_chain: 88888,
                 destination_chain: 77777,
+                sender: Address::repeat_byte(0x33).as_slice().to_vec(),
+                receiver: Address::repeat_byte(0x44).as_slice().to_vec(),
                 label: "SEND".to_string(),
-                data: vec![vec![1, 2, 3]],
+                payload: vec![1, 2, 3],
+                session_id: wire::encode_session_id(U256::ZERO),
                 ..Default::default()
             });
             state.pending.insert(xt.id.clone(), xt);
@@ -1153,7 +1143,7 @@ mod tests {
             receiver: Address::repeat_byte(0x44),
             label: b"SEND".to_vec(),
             data: None,
-            session_id: None,
+            session_id: U256::ZERO,
         };
 
         let simulator = Arc::new(FailingAfterFulfilledDependencySimulator {
@@ -1178,8 +1168,11 @@ mod tests {
             xt.pending_mailbox.push(compose_proto::MailboxMessage {
                 source_chain: 88888,
                 destination_chain: 77777,
+                sender: Address::repeat_byte(0x33).as_slice().to_vec(),
+                receiver: Address::repeat_byte(0x44).as_slice().to_vec(),
                 label: "SEND".to_string(),
-                data: vec![vec![1, 2, 3]],
+                payload: vec![1, 2, 3],
+                session_id: wire::encode_session_id(U256::ZERO),
                 ..Default::default()
             });
             state.pending.insert(xt.id.clone(), xt);

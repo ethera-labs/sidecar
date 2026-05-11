@@ -26,13 +26,12 @@ chains:
     - id: 901
       name: "chain-a"
       rpc: "http://op-rbuilder-a:8545"
-      mailbox_address: "0x0000000000000000000000000000000000000000"
+      universal_bridge_mailbox_address: "0x0000000000000000000000000000000000000000"
       coordinator_key: ""  # Private key for signing putInbox transactions
 
 peers:
-  sidecars:
-    - chain_id: 902
-      addr: "sidecar-b:8080"
+  # Equivalent env: SIDECAR_PEERS="902=http://sidecar-b:8080"
+  entries: "902=http://sidecar-b:8080"
 
 log:
   # Log level: debug, info, warn, error

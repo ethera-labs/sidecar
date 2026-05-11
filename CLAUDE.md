@@ -67,7 +67,7 @@ crates/
     transport            — QUIC client/server, TLS (quinn + rustls + rcgen), framing
     publisher            — wraps QuicClient for SP communication
     peer                 — HTTP client for sidecar-to-sidecar coordination
-  mailbox               — mailbox ABI helpers, dependency matching, overrides, and in-memory queue
+  mailbox               — UniversalBridgeMailbox ABI helpers, dependency matching, overrides, and in-memory queue
   simulation             — RPC-backed tx simulation (eth_call with state overrides)
   metrics                — Prometheus counters/histograms via prometheus-client
   tracing                — tracing-subscriber init (JSON or pretty output)
@@ -77,7 +77,7 @@ crates/
 
 1. **Submit** (`POST /xt`): XT arrives, fingerprinted and stored as `PendingXt`
 2. **Simulate** (`pipeline/simulation.rs`): eth_call against RPC with per-chain state overlays so XTs see each other's
-   effects
+   effects, tracing `writeMessage(Message)` and `readMessage(MessageHeader)` mailbox calls
 3. **Vote** (`handlers/peer_vote.rs`): peer sidecars exchange votes over HTTP (`POST /xt/vote`, `POST /xt/forward`)
 4. **Decide** (`decision/`): standalone (single sidecar) or consensus-based commit/abort
 5. **Reserve / Release**: sidecar pushes XT lifecycle events into the local builder
@@ -85,16 +85,16 @@ crates/
 
 ### HTTP API Routes
 
-| Route                   | Purpose                              |
-|-------------------------|--------------------------------------|
-| `POST /xt`              | Submit a cross-chain transaction     |
-| `GET /xt/:id`           | Get XT status                        |
-| `POST /xt/forward`      | Peer forwarding                      |
-| `POST /xt/vote`         | Peer vote exchange                   |
-| `POST /mailbox`         | Peer mailbox messages                |
-| `POST /ethera/confirm`  | Builder inclusion confirmation       |
-| `GET /health`, `/ready` | Liveness/readiness                   |
-| `GET /metrics`          | Prometheus metrics                   |
+| Route                   | Purpose                          |
+|-------------------------|----------------------------------|
+| `POST /xt`              | Submit a cross-chain transaction |
+| `GET /xt/:id`           | Get XT status                    |
+| `POST /xt/forward`      | Peer forwarding                  |
+| `POST /xt/vote`         | Peer vote exchange               |
+| `POST /mailbox`         | Peer mailbox messages            |
+| `POST /ethera/confirm`  | Builder inclusion confirmation   |
+| `GET /health`, `/ready` | Liveness/readiness               |
+| `GET /metrics`          | Prometheus metrics               |
 
 ### Publisher (QUIC / SP)
 
@@ -104,5 +104,6 @@ state machine.
 
 ### Configuration
 
-Config is via CLI flags or `SIDECAR_*` env vars (no config file loading at runtime). See `configs/config.example.yaml`
-for the full set of options. Key sections: `server`, `publisher`, `chains`, `peers`, `log`.
+Config is via CLI flags or `SIDECAR_*` env vars (no config file loading at runtime). Peer sidecars are keyed by chain ID
+through `SIDECAR_PEERS=CHAIN_ID=URL[,CHAIN_ID=URL]`; the mailbox contract is configured with
+`SIDECAR_UNIVERSAL_BRIDGE_MAILBOX_ADDRESS`.

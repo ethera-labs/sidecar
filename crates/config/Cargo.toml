@@ -12,3 +12,4 @@ workspace = true
 [dependencies]
 compose-primitives.workspace = true
 clap.workspace = true
+thiserror.workspace = true

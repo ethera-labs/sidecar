@@ -4,6 +4,7 @@ use std::collections::{HashMap, HashSet};
 use std::time::Instant;
 
 use alloy::primitives::Address;
+use compose_mailbox::matching::{DependencyKey, MailboxMessageKey};
 use compose_primitives::{
     ChainId, CrossRollupDependency, CrossRollupMessage, InstanceId, PeriodId, SequenceNumber,
 };
@@ -55,16 +56,16 @@ pub struct PendingXt {
     pub pending_mailbox: Vec<MailboxMessage>,
     /// Already-sent outbound CIRC messages.
     pub sent_mailbox: Vec<MailboxMessage>,
-    /// Dedup key set for `sent_mailbox` — O(1) membership check.
-    pub sent_mailbox_keys: HashSet<String>,
+    /// Dedup key set for `sent_mailbox`.
+    pub sent_mailbox_keys: HashSet<MailboxMessageKey>,
     /// Cross-rollup dependencies discovered during simulation.
     pub dependencies: Vec<CrossRollupDependency>,
-    /// O(1) dedup set for `dependencies`, keyed by `dep_key()`.
-    pub dep_keys: HashSet<String>,
+    /// Dedup set for `dependencies`, keyed by the mailbox key fields.
+    pub dep_keys: HashSet<DependencyKey>,
     /// Dependencies that have been fulfilled.
     pub fulfilled_deps: Vec<CrossRollupDependency>,
-    /// O(1) dedup set for `fulfilled_deps`, keyed by `dep_key()`.
-    pub fulfilled_dep_keys: HashSet<String>,
+    /// Dedup set for `fulfilled_deps`, keyed by the mailbox key fields.
+    pub fulfilled_dep_keys: HashSet<DependencyKey>,
     /// Outbound messages from simulation.
     pub outbound_messages: Vec<CrossRollupMessage>,
     /// Cached sender address and nonce per chain, derived from the first raw tx.

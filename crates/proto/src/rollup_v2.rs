@@ -94,22 +94,26 @@ pub struct Decided {
 
 #[derive(Clone, PartialEq, Eq, Message)]
 pub struct MailboxMessage {
-    #[prost(uint64, tag = "1")]
-    pub session_id: u64,
+    /// 32-byte big-endian session ID matching the contract's uint256 sessionId.
+    #[prost(bytes = "vec", tag = "1")]
+    pub session_id: Vec<u8>,
+    /// Instance ID assigned by the SP; used for routing, not part of the on-chain key.
     #[prost(bytes = "vec", tag = "2")]
     pub instance_id: Vec<u8>,
     #[prost(uint64, tag = "3")]
     pub source_chain: u64,
     #[prost(uint64, tag = "4")]
     pub destination_chain: u64,
+    /// msg.sender of the writeMessage call (bridge contract on source chain).
     #[prost(bytes = "vec", tag = "5")]
-    pub source: Vec<u8>,
+    pub sender: Vec<u8>,
     #[prost(bytes = "vec", tag = "6")]
     pub receiver: Vec<u8>,
     #[prost(string, tag = "7")]
     pub label: String,
-    #[prost(bytes = "vec", repeated, tag = "8")]
-    pub data: Vec<Vec<u8>>,
+    /// ABI-encoded message payload (the bytes field of the on-chain Message struct).
+    #[prost(bytes = "vec", tag = "8")]
+    pub payload: Vec<u8>,
 }
 
 // SBCP payloads.

@@ -5,6 +5,10 @@
 use clap::Parser;
 use compose_primitives::ChainId;
 
+mod peer;
+
+pub use peer::{PeerArgs, PeerConfigError, PeerEntry};
+
 /// Ethera sidecar — cross-chain coordination layer.
 #[derive(Debug, Clone, Parser)]
 #[command(name = "sidecar")]
@@ -120,13 +124,13 @@ pub struct ChainArgs {
     )]
     pub builder_rpc: String,
 
-    /// Mailbox contract address.
+    /// `UniversalBridgeMailbox` contract address.
     #[arg(
-        long = "chain.mailbox-address",
-        env = "SIDECAR_MAILBOX_ADDRESS",
+        long = "chain.universal-bridge-mailbox-address",
+        env = "SIDECAR_UNIVERSAL_BRIDGE_MAILBOX_ADDRESS",
         default_value = ""
     )]
-    pub mailbox_address: String,
+    pub universal_bridge_mailbox_address: String,
 
     /// Private key for signing local `putInbox` transactions.
     #[arg(
@@ -150,77 +154,6 @@ impl ChainArgs {
         } else {
             &self.builder_rpc
         }
-    }
-}
-
-/// Peer sidecar addresses for CIRC message delivery.
-/// Supports up to 4 named peer slots (A–D).
-#[derive(Debug, Clone, clap::Args)]
-pub struct PeerArgs {
-    /// Peer A sidecar address.
-    #[arg(long = "peer.a.addr", env = "SIDECAR_PEER_A_ADDR")]
-    pub peer_a_addr: Option<String>,
-
-    /// Peer A chain ID.
-    #[arg(long = "peer.a.chain-id", env = "SIDECAR_PEER_A_CHAIN_ID")]
-    pub peer_a_chain_id: Option<u64>,
-
-    /// Peer B sidecar address.
-    #[arg(long = "peer.b.addr", env = "SIDECAR_PEER_B_ADDR")]
-    pub peer_b_addr: Option<String>,
-
-    /// Peer B chain ID.
-    #[arg(long = "peer.b.chain-id", env = "SIDECAR_PEER_B_CHAIN_ID")]
-    pub peer_b_chain_id: Option<u64>,
-
-    /// Peer C sidecar address.
-    #[arg(long = "peer.c.addr", env = "SIDECAR_PEER_C_ADDR")]
-    pub peer_c_addr: Option<String>,
-
-    /// Peer C chain ID.
-    #[arg(long = "peer.c.chain-id", env = "SIDECAR_PEER_C_CHAIN_ID")]
-    pub peer_c_chain_id: Option<u64>,
-
-    /// Peer D sidecar address.
-    #[arg(long = "peer.d.addr", env = "SIDECAR_PEER_D_ADDR")]
-    pub peer_d_addr: Option<String>,
-
-    /// Peer D chain ID.
-    #[arg(long = "peer.d.chain-id", env = "SIDECAR_PEER_D_CHAIN_ID")]
-    pub peer_d_chain_id: Option<u64>,
-}
-
-/// A resolved peer entry.
-#[derive(Debug, Clone)]
-pub struct PeerEntry {
-    pub chain_id: ChainId,
-    pub addr: String,
-}
-
-impl PeerArgs {
-    /// Collect configured peers into a list, skipping slots without an address.
-    /// Uses default chain IDs (901–904) when not explicitly set.
-    pub fn to_entries(&self) -> Vec<PeerEntry> {
-        let slots: [(Option<&str>, Option<u64>, u64); 4] = [
-            (self.peer_a_addr.as_deref(), self.peer_a_chain_id, 901),
-            (self.peer_b_addr.as_deref(), self.peer_b_chain_id, 902),
-            (self.peer_c_addr.as_deref(), self.peer_c_chain_id, 903),
-            (self.peer_d_addr.as_deref(), self.peer_d_chain_id, 904),
-        ];
-
-        slots
-            .into_iter()
-            .filter_map(|(addr, chain_id, default_id)| {
-                let addr = addr?;
-                if addr.is_empty() {
-                    return None;
-                }
-                Some(PeerEntry {
-                    chain_id: ChainId(chain_id.unwrap_or(default_id)),
-                    addr: addr.to_string(),
-                })
-            })
-            .collect()
     }
 }
 
@@ -311,31 +244,6 @@ mod tests {
         assert!(args.publisher.enabled);
         assert_eq!(args.publisher.addr, "publisher:8080");
         assert_eq!(args.log.level, "debug");
-    }
-
-    #[test]
-    fn peer_entries_from_partial_config() {
-        let args = SidecarArgs::parse_from([
-            "sidecar",
-            "--peer.a.addr",
-            "http://sidecar-a:8090",
-            "--peer.a.chain-id",
-            "77777",
-            "--peer.b.addr",
-            "http://sidecar-b:8090",
-        ]);
-        let entries = args.peers.to_entries();
-        assert_eq!(entries.len(), 2);
-        assert_eq!(entries[0].chain_id, ChainId(77777));
-        assert_eq!(entries[0].addr, "http://sidecar-a:8090");
-        assert_eq!(entries[1].chain_id, ChainId(902)); // default
-        assert_eq!(entries[1].addr, "http://sidecar-b:8090");
-    }
-
-    #[test]
-    fn no_peers_when_none_configured() {
-        let args = SidecarArgs::parse_from(["sidecar"]);
-        assert!(args.peers.to_entries().is_empty());
     }
 
     #[test]

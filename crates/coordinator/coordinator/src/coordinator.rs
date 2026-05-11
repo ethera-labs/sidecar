@@ -738,7 +738,12 @@ mod tests {
         let txs_b = txs.clone();
         let second = tokio::spawn(async move { coordinator_b.submit_xt(txs_b).await });
 
-        for _ in 0..50 {
+        // Wait until both tasks are parked in pending_submissions AND the
+        // publisher call has been made. The two conditions can briefly diverge:
+        // the winning task releases the state lock (incrementing waiter_count)
+        // before it calls send_raw(), so checking both together is required to
+        // avoid a race.
+        for _ in 0..100 {
             let waiter_count = coordinator
                 .state
                 .read()
@@ -747,7 +752,8 @@ mod tests {
                 .get(&fingerprint)
                 .map(Vec::len)
                 .unwrap_or_default();
-            if waiter_count == 2 {
+            let send_calls = publisher.send_raw_calls.load(Ordering::SeqCst);
+            if waiter_count == 2 && send_calls == 1 {
                 break;
             }
             sleep(Duration::from_millis(10)).await;
