@@ -29,6 +29,10 @@ impl DefaultCoordinator {
                 if xt.period_id.0 == 0 || xt.period_id >= period_id || xt.confirmed_at.is_some() {
                     continue;
                 }
+                // Edge case: an XT can reach decision=true yet never get builder confirmation
+                // if its released putInbox txs fail later. If we carry that stale local
+                // reservation into the next period, the deferred putInbox nonce manager can
+                // stay ahead of canonical chain nonce and poison later bridge XTs.
                 if let Some(super::builder_control::XtBuilderCommand::Abort { instance_id }) =
                     self.local_builder_command(xt, false)
                 {
@@ -65,6 +69,9 @@ impl DefaultCoordinator {
             .await?;
         }
 
+        // When we explicitly recovered a stale local reservation lane above, we need an exact
+        // nonce resync. A monotonic resync would preserve the stale in-memory nonce and keep
+        // subsequent putInbox txs one step ahead of the builder execution cursor.
         let nonce_resync = if recovered_local_nonce_lane {
             self.resync_put_inbox_nonce().await
         } else {

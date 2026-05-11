@@ -18,6 +18,9 @@ pub struct XtStatusResponse {
 pub fn determine_xt_status(xt: &PendingXt) -> XtStatus {
     if let Some(decision) = xt.decision {
         return if decision {
+            // Edge case: publisher decision=true only means the XT committed at the coordination
+            // layer. The builder may still fail to include it later, so do not report
+            // `committed` until we have a local inclusion confirmation.
             if xt.confirmed_at.is_some() {
                 XtStatus::Committed
             } else {
