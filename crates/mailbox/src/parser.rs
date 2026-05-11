@@ -63,7 +63,7 @@ fn walk_trace(
 
 /// Decode a `writeMessage(Message)` call.
 ///
-/// UniversalBridgeMailbox keys messages from the explicit header fields.
+/// `UniversalBridgeMailbox` keys messages from the explicit header fields.
 /// For bridge ACK flows the header sender can differ from the bridge contract
 /// caller, and simulation must preserve that sender so later `readMessage`
 /// dependencies can match it.

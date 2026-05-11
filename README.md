@@ -42,8 +42,10 @@ This is an active implementation of the Ethera protocol. It currently covers:
 - **UniversalBridgeMailbox**: traces `writeMessage(Message)` / `readMessage(MessageHeader)`,
   matches dependencies on the six-field mailbox key, and carries 256-bit session IDs as 32-byte
   big-endian protobuf bytes.
-- **Builder integration**: pull-based `POST /transactions` hold/deliver flow for op-rbuilder with
-  deferred nonce management for concurrent `putInbox` transactions.
+- **Builder integration**: JSON-RPC push flow into op-rbuilder
+  (`ethera_submitXt` to lock a slot, `ethera_releaseXt` to deliver `putInbox` + main txs,
+  `ethera_abortXt` to release on abort) with deferred nonce management for concurrent
+  `putInbox` transactions. Inclusion is reported back over `POST /ethera/confirm`.
 - **Verification hook**: optional external HTTP callout on inbound XTs before the commit vote.
 
 ---
@@ -112,17 +114,27 @@ cargo test -p compose-coordinator   # single crate
 
 ## HTTP API
 
-| Route                    | Direction         | Purpose                                     |
-|--------------------------|-------------------|---------------------------------------------|
-| `POST /xt`               | user → sidecar    | Submit a cross-chain transaction            |
-| `GET  /xt/:id`           | user → sidecar    | Query XT status                             |
-| `POST /xt/forward`       | peer → sidecar    | Forward an XT seen by another sidecar       |
-| `POST /xt/vote`          | peer → sidecar    | Exchange SCP votes                          |
-| `POST /mailbox`          | peer → sidecar    | Deliver CIRC mailbox messages               |
-| `POST /transactions`     | builder ↔ sidecar | Pull-based delivery of held XT transactions |
-| `POST /ethera/confirm`   | builder → sidecar | Report final inclusion of XT instances      |
-| `GET  /health`, `/ready` | —                 | Liveness / readiness                        |
-| `GET  /metrics`          | —                 | Prometheus exposition                       |
+The sidecar exposes axum routes (see [`crates/coordinator/server`](./crates/coordinator/server)):
+
+| Route                    | Direction         | Purpose                                |
+|--------------------------|-------------------|----------------------------------------|
+| `POST /xt`               | user → sidecar    | Submit a cross-chain transaction       |
+| `GET  /xt/:id`           | user → sidecar    | Query XT status                        |
+| `POST /xt/forward`       | peer → sidecar    | Forward an XT seen by another sidecar  |
+| `POST /xt/vote`          | peer → sidecar    | Exchange SCP votes                     |
+| `POST /mailbox`          | peer → sidecar    | Deliver CIRC mailbox messages          |
+| `POST /ethera/confirm`   | builder → sidecar | Report final inclusion of XT instances |
+| `GET  /health`, `/ready` | —                 | Liveness / readiness                   |
+| `GET  /metrics`          | —                 | Prometheus exposition                  |
+
+The sidecar drives the local op-rbuilder over JSON-RPC (no inbound HTTP from the builder except the
+inclusion confirmation):
+
+| Method             | Direction         | Purpose                                                |
+|--------------------|-------------------|--------------------------------------------------------|
+| `ethera_submitXt`  | sidecar → builder | Lock a slot for `(instance_id, period, sequence, txs)` |
+| `ethera_releaseXt` | sidecar → builder | Release the slot with `putInbox` + main txs to include |
+| `ethera_abortXt`   | sidecar → builder | Release the slot without inclusion                     |
 
 The SP channel is a QUIC stream carrying length-prefixed protobuf `WireMessage` frames defined in
 [`crates/proto`](./crates/proto).
@@ -157,15 +169,17 @@ crates/
 
 The coordinator pipeline (`crates/coordinator/coordinator/src/pipeline`) maps onto SCP directly:
 
-1. **Submission** (`pipeline/submission.rs`) — fingerprint, deduplicate, persist as `PendingXt`.
+1. **Submission** (`pipeline/submission.rs`) — fingerprint, deduplicate, persist as `PendingXt`,
+   then push `ethera_submitXt(instance_id, order, txs)` to the local builder so it reserves a slot.
 2. **Simulation** (`pipeline/simulation.rs`) — `eth_call` / `debug_traceCall` with per-chain state
    overlays so sequential XTs observe each other's effects; traces mailbox reads/writes.
 3. **Voting** (`handlers/peer_vote.rs`) — exchange votes via `POST /xt/vote` (standalone) or emit
    `Vote` to SP.
-4. **Decision** (`handlers/decision.rs`) — commit/abort propagates to the builder via the pull
-   protocol; aborts release reservations and roll back nonces.
-5. **Delivery** (`pipeline/delivery.rs`) — holds local + `putInbox` transactions until the builder
-   asks for them; inclusion is confirmed via `POST /ethera/confirm`.
+4. **Decision** (`handlers/decision.rs`, `handlers/builder_control.rs`) — on commit, build
+   `putInbox` transactions and push `ethera_releaseXt(instance_id, putInboxTxs)` to the builder; on
+   abort (vote, rollback, or stale period) push `ethera_abortXt(instance_id)`.
+5. **Confirmation** (`POST /ethera/confirm`) — the builder reports back which instance IDs landed
+   on chain; the sidecar marks them confirmed and `GET /xt/:id` callers see the final status.
 
 ### SBCP integration
 
