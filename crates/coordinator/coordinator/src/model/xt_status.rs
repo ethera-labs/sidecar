@@ -18,7 +18,14 @@ pub struct XtStatusResponse {
 pub fn determine_xt_status(xt: &PendingXt) -> XtStatus {
     if let Some(decision) = xt.decision {
         return if decision {
-            XtStatus::Committed
+            // Edge case: publisher decision=true only means the XT committed at the coordination
+            // layer. The builder may still fail to include it later, so do not report
+            // `committed` until we have a local inclusion confirmation.
+            if xt.confirmed_at.is_some() {
+                XtStatus::Committed
+            } else {
+                XtStatus::Voted
+            }
         } else {
             XtStatus::Aborted
         };
@@ -36,4 +43,29 @@ pub fn determine_xt_status(xt: &PendingXt) -> XtStatus {
         return XtStatus::Simulating;
     }
     XtStatus::Pending
+}
+
+#[cfg(test)]
+mod tests {
+    use compose_primitives::XtStatus;
+
+    use crate::model::pending_xt::PendingXt;
+    use crate::model::xt_status::determine_xt_status;
+
+    #[test]
+    fn accepted_xt_is_not_committed_before_builder_confirmation() {
+        let mut xt = PendingXt::new("xt-1".to_string(), b"xt-1".to_vec());
+        xt.record_decision(true);
+
+        assert_eq!(determine_xt_status(&xt), XtStatus::Voted);
+    }
+
+    #[test]
+    fn accepted_xt_is_committed_after_builder_confirmation() {
+        let mut xt = PendingXt::new("xt-2".to_string(), b"xt-2".to_vec());
+        xt.record_decision(true);
+        xt.confirmed_at = Some(std::time::Instant::now());
+
+        assert_eq!(determine_xt_status(&xt), XtStatus::Committed);
+    }
 }
