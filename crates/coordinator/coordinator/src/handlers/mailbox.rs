@@ -43,7 +43,7 @@ impl DefaultCoordinator {
                     );
                 }
             } else {
-                // XT not registered yet — buffer so it can be attached when
+                // XT not registered yet - buffer so it can be attached when
                 // the XT arrives.  This handles the race where sidecar-a's
                 // simulation completes in <1 ms and sends outbound mailbox
                 // messages to sidecar-b before the forwarded XT arrives.

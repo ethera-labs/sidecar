@@ -9,9 +9,13 @@ use tracing::debug;
 use crate::contract::{calldata_selector, readMessageCall, writeMessageCall};
 use crate::types::{MailboxCall, MailboxCallType, SimulationState};
 
+// Bounds recursion against pathological RPC responses; deeper traces are
+// truncated rather than risking a stack overflow.
+const MAX_TRACE_DEPTH: usize = 1024;
+
 /// Parse mailbox read/write calls from a geth `callTracer` output.
 ///
-/// Recursively walks the call tree, identifying calls to the mailbox contract
+/// Iteratively walks the call tree, identifying calls to the mailbox contract
 /// by matching function selectors for `writeMessage` and `readMessage`.
 pub fn parse_call_trace(
     trace: &Value,
@@ -19,11 +23,25 @@ pub fn parse_call_trace(
     local_chain_id: ChainId,
 ) -> SimulationState {
     let mut state = SimulationState::default();
-    walk_trace(trace, mailbox_address, local_chain_id, &mut state);
+    let mut stack: Vec<(&Value, usize)> = Vec::with_capacity(16);
+    stack.push((trace, 0));
+
+    while let Some((node, depth)) = stack.pop() {
+        visit_node(node, mailbox_address, local_chain_id, &mut state);
+
+        if depth >= MAX_TRACE_DEPTH {
+            continue;
+        }
+        if let Some(calls) = node.get("calls").and_then(|v| v.as_array()) {
+            for child in calls {
+                stack.push((child, depth + 1));
+            }
+        }
+    }
     state
 }
 
-fn walk_trace(
+fn visit_node(
     node: &Value,
     mailbox_address: Address,
     local_chain_id: ChainId,
@@ -32,31 +50,26 @@ fn walk_trace(
     let from_str = node.get("from").and_then(|v| v.as_str()).unwrap_or("");
     let to_str = node.get("to").and_then(|v| v.as_str()).unwrap_or("");
     let input = node.get("input").and_then(|v| v.as_str()).unwrap_or("");
-    let from_addr = from_str.parse::<Address>().ok();
 
-    if let Ok(to_addr) = to_str.parse::<Address>() {
-        if to_addr == mailbox_address && input.len() >= 10 {
-            let selector = calldata_selector(input);
+    let Ok(to_addr) = to_str.parse::<Address>() else {
+        return;
+    };
+    if to_addr != mailbox_address || input.len() < 10 {
+        return;
+    }
+    let selector = calldata_selector(input);
 
-            if selector == Some(writeMessageCall::SELECTOR) {
-                if let Some(caller) = from_addr {
-                    if let Some(call) = decode_write(input, caller, local_chain_id) {
-                        debug!(label = %call.label, "Parsed mailbox writeMessage call");
-                        state.writes.push(call);
-                    }
-                }
-            } else if selector == Some(readMessageCall::SELECTOR) {
-                if let Some(call) = decode_read(input, local_chain_id) {
-                    debug!(label = %call.label, "Parsed mailbox readMessage call");
-                    state.reads.push(call);
-                }
+    if selector == Some(writeMessageCall::SELECTOR) {
+        if let Ok(caller) = from_str.parse::<Address>() {
+            if let Some(call) = decode_write(input, caller, local_chain_id) {
+                debug!(label = %call.label, "Parsed mailbox writeMessage call");
+                state.writes.push(call);
             }
         }
-    }
-
-    if let Some(calls) = node.get("calls").and_then(|v| v.as_array()) {
-        for child in calls {
-            walk_trace(child, mailbox_address, local_chain_id, state);
+    } else if selector == Some(readMessageCall::SELECTOR) {
+        if let Some(call) = decode_read(input, local_chain_id) {
+            debug!(label = %call.label, "Parsed mailbox readMessage call");
+            state.reads.push(call);
         }
     }
 }

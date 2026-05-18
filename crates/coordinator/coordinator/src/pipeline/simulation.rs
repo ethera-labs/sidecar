@@ -302,16 +302,27 @@ impl DefaultCoordinator {
         base_overrides: &StateOverride,
     ) -> StateOverride {
         let mut state = self.state.write().await;
-        let Some(xt) = state.pending.get_mut(instance_id) else {
+        if !state.pending.contains_key(instance_id) {
             return base_overrides.clone();
-        };
+        }
 
         let mut merged_overrides = base_overrides.clone();
         if result.success {
-            if let Some(ref result_overrides) = result.state_overrides {
+            if let Some(result_overrides) = result.state_overrides.as_ref() {
                 merge_overrides(&mut merged_overrides, result_overrides);
+                // Push only the new piece into the per-chain overlay; the base
+                // overrides already live there from the previous step.
+                let overlay = state
+                    .chain_overlay
+                    .entry(self.chain_id)
+                    .or_insert_with(ChainOverlay::new);
+                merge_overrides(&mut overlay.overlay, result_overrides);
             }
         }
+
+        let Some(xt) = state.pending.get_mut(instance_id) else {
+            return merged_overrides;
+        };
 
         for dep in &result.dependencies {
             let key = DependencyKey::from(dep);
@@ -324,16 +335,6 @@ impl DefaultCoordinator {
             if !contains_message(&xt.outbound_messages, msg) {
                 xt.outbound_messages.push(msg.clone());
             }
-        }
-
-        // Update the chain overlay so the next XT simulated on this chain sees
-        // the accumulated post-simulation state.
-        if result.success {
-            let overlay = state
-                .chain_overlay
-                .entry(self.chain_id)
-                .or_insert_with(ChainOverlay::new);
-            merge_overrides(&mut overlay.overlay, &merged_overrides);
         }
 
         merged_overrides
@@ -412,9 +413,11 @@ impl DefaultCoordinator {
                 .iter()
                 .position(|msg| matches_dependency(msg, dep))
             {
-                let mailbox_msg = xt.pending_mailbox.remove(idx);
+                // Order of pending_mailbox is irrelevant - matching is purely
+                // by content - so swap_remove avoids O(n) tail shift.
+                let mailbox_msg = xt.pending_mailbox.swap_remove(idx);
                 let mut fulfilled = dep.clone();
-                fulfilled.data = Some(mailbox_msg.payload.clone());
+                fulfilled.data = Some(mailbox_msg.payload);
                 xt.fulfilled_dep_keys.insert(key);
                 xt.fulfilled_deps.push(fulfilled);
                 added += 1;
@@ -450,7 +453,7 @@ impl DefaultCoordinator {
             return Ok(());
         };
 
-        let mut to_send = Vec::<MailboxMessage>::new();
+        let mut to_send = Vec::<MailboxMessage>::with_capacity(outbound_messages.len());
         {
             let mut state = self.state.write().await;
             let Some(xt) = state.pending.get_mut(instance_id) else {
@@ -471,15 +474,14 @@ impl DefaultCoordinator {
 
                 let key = MailboxMessageKey::from(&mailbox_msg);
                 if xt.sent_mailbox_keys.insert(key) {
-                    xt.sent_mailbox.push(mailbox_msg.clone());
                     to_send.push(mailbox_msg);
                 }
             }
         }
 
         let sent_count = to_send.len();
-        for msg in to_send {
-            sender.send(ChainId(msg.destination_chain), &msg).await?;
+        for msg in &to_send {
+            sender.send(ChainId(msg.destination_chain), msg).await?;
         }
         if sent_count > 0 {
             if let Some(m) = &self.metrics {

@@ -134,7 +134,7 @@ impl InstanceId {
 
     /// Create an `InstanceId` for standalone mode (no publisher).
     ///
-    /// Format: `xt-{chain_id}-{seq}` — human-readable and unique per sidecar.
+    /// Format: `xt-{chain_id}-{seq}` - human-readable and unique per sidecar.
     /// This string is forwarded to peer sidecars as-is, so the format must
     /// be stable across versions.
     pub fn standalone(chain_id: ChainId, seq: u64) -> Self {

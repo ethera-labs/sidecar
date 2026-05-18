@@ -7,7 +7,7 @@ use prometheus_client::encoding::text::encode;
 
 use crate::state::AppState;
 
-/// GET /metrics — expose all registered Prometheus metrics in text format.
+/// GET /metrics - expose all registered Prometheus metrics in text format.
 pub async fn handle_metrics(State(state): State<AppState>) -> Response {
     let Some(registry) = &state.registry else {
         return (StatusCode::NOT_FOUND, "metrics not configured").into_response();
