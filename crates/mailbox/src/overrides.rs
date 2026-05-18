@@ -57,11 +57,53 @@ pub fn merge_overrides(base: &mut StateOverride, overlay: &StateOverride) {
     }
 }
 
+/// Same as [`merge_overrides`] but consumes `overlay`, avoiding per-account clones
+/// when the caller no longer needs the overlay map.
+pub fn merge_overrides_owned(base: &mut StateOverride, overlay: StateOverride) {
+    for (addr, overlay_acct) in overlay {
+        match base.entry(addr) {
+            std::collections::hash_map::Entry::Occupied(mut entry) => {
+                let base_acct = entry.get_mut();
+
+                if let Some(overlay_state) = overlay_acct.state {
+                    base_acct.state = Some(overlay_state);
+                    base_acct.state_diff = None;
+                } else if let Some(overlay_diff) = overlay_acct.state_diff {
+                    if let Some(base_state) = &mut base_acct.state {
+                        for (k, v) in overlay_diff {
+                            base_state.insert(k, v);
+                        }
+                    } else if let Some(base_diff) = base_acct.state_diff.as_mut() {
+                        for (k, v) in overlay_diff {
+                            base_diff.insert(k, v);
+                        }
+                    } else {
+                        base_acct.state_diff = Some(overlay_diff);
+                    }
+                }
+
+                if overlay_acct.nonce.is_some() {
+                    base_acct.nonce = overlay_acct.nonce;
+                }
+                if overlay_acct.balance.is_some() {
+                    base_acct.balance = overlay_acct.balance;
+                }
+                if overlay_acct.code.is_some() {
+                    base_acct.code = overlay_acct.code;
+                }
+            }
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(overlay_acct);
+            }
+        }
+    }
+}
+
 fn mapping_slot(key: B256, slot: u64) -> B256 {
-    let mut blob = Vec::with_capacity(64);
-    blob.extend_from_slice(key.as_slice());
-    blob.extend_from_slice(&U256::from(slot).to_be_bytes::<32>());
-    keccak256(blob)
+    let mut buf = [0u8; 64];
+    buf[..32].copy_from_slice(key.as_slice());
+    buf[32..].copy_from_slice(&U256::from(slot).to_be_bytes::<32>());
+    keccak256(buf)
 }
 
 fn encode_short_bytes(data: &[u8]) -> B256 {

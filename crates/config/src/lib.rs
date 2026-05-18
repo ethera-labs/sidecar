@@ -9,7 +9,7 @@ mod peer;
 
 pub use peer::{PeerArgs, PeerConfigError, PeerEntry};
 
-/// Ethera sidecar — cross-chain coordination layer.
+/// Ethera sidecar - cross-chain coordination layer.
 #[derive(Debug, Clone, Parser)]
 #[command(name = "sidecar")]
 pub struct SidecarArgs {

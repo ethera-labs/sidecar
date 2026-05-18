@@ -59,7 +59,7 @@ impl From<&MailboxMessage> for MailboxMessageKey {
 /// Check whether a mailbox message satisfies a cross-rollup dependency.
 ///
 /// All six key fields must agree: source chain, destination chain, sender,
-/// receiver, session ID, and label — mirroring the on-chain `getKey` preimage.
+/// receiver, session ID, and label - mirroring the on-chain `getKey` preimage.
 pub fn matches_dependency(msg: &MailboxMessage, dep: &CrossRollupDependency) -> bool {
     if ChainId(msg.source_chain) != dep.source_chain_id {
         return false;
@@ -70,10 +70,16 @@ pub fn matches_dependency(msg: &MailboxMessage, dep: &CrossRollupDependency) -> 
     if msg.label.as_bytes() != dep.label.as_slice() {
         return false;
     }
-    if msg.sender.len() != 20 || Address::from_slice(&msg.sender) != dep.sender {
+    let Ok(sender) = <&[u8; 20]>::try_from(msg.sender.as_slice()) else {
+        return false;
+    };
+    if Address::from(*sender) != dep.sender {
         return false;
     }
-    if msg.receiver.len() != 20 || Address::from_slice(&msg.receiver) != dep.receiver {
+    let Ok(receiver) = <&[u8; 20]>::try_from(msg.receiver.as_slice()) else {
+        return false;
+    };
+    if Address::from(*receiver) != dep.receiver {
         return false;
     }
 

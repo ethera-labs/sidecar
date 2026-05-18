@@ -50,12 +50,13 @@ rustls = { version = "0.23", default-features = false, features = ["std", "ring"
 rcgen = "0.13"
 
 # Ethereum
-alloy = { version = "1.0", features = [
+alloy = { version = "1.7", features = [
     "sol-types", "consensus", "network",
     "signers", "signer-local", "providers", "provider-http",
     "rpc-types", "rlp", "k256",
 ] }
-alloy-rpc-types-eth = "1.1.2"
+alloy-rpc-types-eth = "1.7"
+alloy-rpc-types-trace = "1.7"
 
 # Protobuf
 prost = "0.13"

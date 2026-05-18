@@ -235,8 +235,10 @@ mod tests {
 
         {
             let mut state = coordinator.state.write().await;
-            let mut xt =
-                PendingXt::new("xt-77777-confirmed".to_string(), b"xt-77777-confirmed".to_vec());
+            let mut xt = PendingXt::new(
+                "xt-77777-confirmed".to_string(),
+                b"xt-77777-confirmed".to_vec(),
+            );
             xt.period_id = PeriodId(1);
             xt.record_decision(true);
             xt.confirmed_at = Some(std::time::Instant::now());

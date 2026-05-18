@@ -10,7 +10,7 @@ use prost::Message;
 use crate::error::ServerError;
 use crate::state::AppState;
 
-/// POST /xt/forward — receive a forwarded XT from a peer sidecar.
+/// POST /xt/forward - receive a forwarded XT from a peer sidecar.
 pub async fn handle_forward_xt(
     State(state): State<AppState>,
     Json(req): Json<XtForwardRequest>,
@@ -32,7 +32,7 @@ pub async fn handle_forward_xt(
     Ok(Json(serde_json::json!({ "status": "ok" })))
 }
 
-/// POST /xt/vote — receive a vote from a peer sidecar.
+/// POST /xt/vote - receive a vote from a peer sidecar.
 pub async fn handle_peer_vote(
     State(state): State<AppState>,
     Json(req): Json<VoteRequest>,
@@ -45,7 +45,7 @@ pub async fn handle_peer_vote(
     Ok(Json(serde_json::json!({ "status": "ok" })))
 }
 
-/// POST /mailbox — receive a CIRC mailbox message from a peer sidecar.
+/// POST /mailbox - receive a CIRC mailbox message from a peer sidecar.
 pub async fn handle_mailbox(
     State(state): State<AppState>,
     body: axum::body::Bytes,

@@ -54,9 +54,7 @@ pub struct PendingXt {
 
     /// Inbound CIRC messages waiting to be matched.
     pub pending_mailbox: Vec<MailboxMessage>,
-    /// Already-sent outbound CIRC messages.
-    pub sent_mailbox: Vec<MailboxMessage>,
-    /// Dedup key set for `sent_mailbox`.
+    /// Dedup key set for outbound CIRC messages we have already dispatched.
     pub sent_mailbox_keys: HashSet<MailboxMessageKey>,
     /// Cross-rollup dependencies discovered during simulation.
     pub dependencies: Vec<CrossRollupDependency>,
@@ -95,7 +93,6 @@ impl PendingXt {
             origin_chain: None,
             origin_seq: SequenceNumber(0),
             pending_mailbox: Vec::new(),
-            sent_mailbox: Vec::new(),
             sent_mailbox_keys: HashSet::new(),
             dependencies: Vec::new(),
             dep_keys: HashSet::new(),

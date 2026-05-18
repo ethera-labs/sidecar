@@ -216,7 +216,7 @@ impl DefaultCoordinator {
 
         // Send abort vote directly to the publisher, bypassing send_vote()
         // which requires the XT to exist in pending state. In standalone mode
-        // this is a no-op — there's no XT to track and no publisher to notify.
+        // this is a no-op - there's no XT to track and no publisher to notify.
         if let Some(publisher) = &self.publisher {
             if publisher.is_connected() {
                 if let Err(e) = publisher.send_vote(&msg.instance_id, false).await {

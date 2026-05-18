@@ -12,7 +12,7 @@ pub struct ConfirmIncludedRequest {
     pub instance_ids: Vec<String>,
 }
 
-/// POST /ethera/confirm — confirm included XT instance IDs back to the sidecar.
+/// POST /ethera/confirm - confirm included XT instance IDs back to the sidecar.
 pub async fn handle_confirm_included(
     State(state): State<AppState>,
     Json(req): Json<ConfirmIncludedRequest>,

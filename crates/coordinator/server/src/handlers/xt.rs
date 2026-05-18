@@ -24,7 +24,7 @@ pub struct XtSubmitResponse {
     pub status: String,
 }
 
-/// `POST /xt` — submit a cross-chain transaction.
+/// `POST /xt` - submit a cross-chain transaction.
 pub async fn handle_submit_xt(
     State(state): State<AppState>,
     Json(req): Json<XtSubmitRequest>,
@@ -55,7 +55,7 @@ pub async fn handle_submit_xt(
     }))
 }
 
-/// `GET /xt/{instance_id}` — query XT status.
+/// `GET /xt/{instance_id}` - query XT status.
 pub async fn handle_get_xt_status(
     State(state): State<AppState>,
     Path(instance_id): Path<String>,

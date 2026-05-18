@@ -72,6 +72,13 @@ pub(crate) struct CoordinatorState {
 }
 
 impl CoordinatorState {
+    // Defensive caps on the orphan mailbox buffer (see `buffer_orphan_mailbox`).
+    // Limits total memory a peer can pin between cleanup ticks while still
+    // covering legitimate race windows where many CIRC messages arrive ahead of
+    // a single XT forward.
+    pub(crate) const MAILBOX_BUFFER_MAX_KEYS: usize = 1024;
+    pub(crate) const MAILBOX_BUFFER_MAX_PER_KEY: usize = 256;
+
     fn new() -> Self {
         Self {
             pending: HashMap::new(),
@@ -96,10 +103,18 @@ impl CoordinatorState {
     /// happen when sidecar-a's simulation completes in <1 ms and the outbound
     /// message reaches sidecar-b before the XT forward does.
     pub(crate) fn buffer_orphan_mailbox(&mut self, msg: MailboxMessage) {
-        self.mailbox_buffer
+        let known = self.mailbox_buffer.contains_key(&msg.instance_id);
+        if !known && self.mailbox_buffer.len() >= Self::MAILBOX_BUFFER_MAX_KEYS {
+            return;
+        }
+        let bucket = self
+            .mailbox_buffer
             .entry(msg.instance_id.clone())
-            .or_default()
-            .push(msg);
+            .or_default();
+        if bucket.len() >= Self::MAILBOX_BUFFER_MAX_PER_KEY {
+            return;
+        }
+        bucket.push(msg);
     }
 
     /// Drain any buffered mailbox messages for the given raw `instance_id` key
@@ -141,6 +156,10 @@ impl std::fmt::Debug for DefaultCoordinator {
 }
 
 impl DefaultCoordinator {
+    // Bounds `stop()` so a stuck verification HTTP call or unresponsive peer
+    // cannot block process shutdown indefinitely.
+    const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(10);
+
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         chain_id: ChainId,
@@ -212,10 +231,18 @@ impl DefaultCoordinator {
     }
 
     /// Gracefully shut down, waiting for all spawned tasks to complete.
+    ///
+    /// Caps the wait so a stuck verification HTTP call or unresponsive peer
+    /// cannot block the binary's shutdown indefinitely.
     pub async fn stop(&self) -> Result<(), CoordinatorError> {
         info!("Stopping coordinator");
         self.task_tracker.close();
-        self.task_tracker.wait().await;
+        if tokio::time::timeout(Self::SHUTDOWN_TIMEOUT, self.task_tracker.wait())
+            .await
+            .is_err()
+        {
+            warn!("Coordinator shutdown timed out waiting for background tasks");
+        }
         Ok(())
     }
 
@@ -700,7 +727,7 @@ mod tests {
                     .checked_sub(Duration::from_secs(400))
                     .unwrap(),
             );
-            // decided_at is old but confirmed_at is recent — should be retained.
+            // decided_at is old but confirmed_at is recent - should be retained.
             xt.confirmed_at = Some(std::time::Instant::now());
             state.pending.insert(xt.id.clone(), xt);
         }
