@@ -33,7 +33,12 @@ pub fn parse_call_trace(
             continue;
         }
         if let Some(calls) = node.get("calls").and_then(|v| v.as_array()) {
-            for child in calls {
+            // Push in reverse so the leftmost child pops first; preserves the
+            // pre-order DFS the recursive predecessor produced. Trace order
+            // matters because outbound mailbox writes are dispatched to peers
+            // in vector order, and writes that share a dedup key fall under
+            // last-in-wins on the receiver.
+            for child in calls.iter().rev() {
                 stack.push((child, depth + 1));
             }
         }
@@ -334,5 +339,58 @@ mod tests {
         let parsed = parse_call_trace(&trace, mailbox, ChainId(88888));
         assert_eq!(parsed.reads.len(), 0);
         assert_eq!(parsed.writes.len(), 0);
+    }
+
+    #[test]
+    fn preserves_call_order_across_nested_children() {
+        let mailbox: Address = "0xe5d5d610fb9767df117f4076444b45404201a097"
+            .parse()
+            .unwrap();
+        let caller: Address = "0xf5fe1b951c5cdf2d4299f8e63444ff621cd2fed9"
+            .parse()
+            .unwrap();
+        let receiver: Address = "0x4bcf3d44f2531497e82be4556f380b0a414aa9ce"
+            .parse()
+            .unwrap();
+        let session_id = U256::from(1u64);
+
+        let write_a = json!({
+            "from": format!("{caller:#x}"),
+            "to": format!("{mailbox:#x}"),
+            "input": make_write_calldata(88888, caller, receiver, session_id, "A", b"a"),
+        });
+        let write_b = json!({
+            "from": format!("{caller:#x}"),
+            "to": format!("{mailbox:#x}"),
+            "input": make_write_calldata(88888, caller, receiver, session_id, "B", b"b"),
+            "calls": [
+                {
+                    "from": format!("{caller:#x}"),
+                    "to": format!("{mailbox:#x}"),
+                    "input": make_write_calldata(88888, caller, receiver, session_id, "B1", b"b1"),
+                },
+                {
+                    "from": format!("{caller:#x}"),
+                    "to": format!("{mailbox:#x}"),
+                    "input": make_write_calldata(88888, caller, receiver, session_id, "B2", b"b2"),
+                },
+            ],
+        });
+        let write_c = json!({
+            "from": format!("{caller:#x}"),
+            "to": format!("{mailbox:#x}"),
+            "input": make_write_calldata(88888, caller, receiver, session_id, "C", b"c"),
+        });
+
+        let trace = json!({
+            "from": format!("{caller:#x}"),
+            "to": format!("{caller:#x}"),
+            "input": "0x",
+            "calls": [write_a, write_b, write_c],
+        });
+
+        let parsed = parse_call_trace(&trace, mailbox, ChainId(77777));
+        let labels: Vec<&str> = parsed.writes.iter().map(|w| w.label.as_str()).collect();
+        assert_eq!(labels, vec!["A", "B", "B1", "B2", "C"]);
     }
 }
