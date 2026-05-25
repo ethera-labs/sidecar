@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is **Ethera Sidecar** — a cross-chain coordination layer for rollups. It manages cross-chain transaction (XT)
+This is **Ethera Sidecar** - a cross-chain coordination layer for rollups. It manages cross-chain transaction (XT)
 lifecycles: from submission through simulation, peer voting, builder reservation control, and inclusion confirmation.
 Sidecars communicate with each other over HTTP, with the local builder over JSON-RPC/HTTP, and with a shared publisher
 (SP) over QUIC.
@@ -54,23 +54,23 @@ just install-hooks  # installs pre-commit hooks (requires: pip install pre-commi
 The workspace contains one binary and many library crates, all prefixed `compose-*`:
 
 ```
-bin/sidecar              — binary entrypoint: wires up all crates and starts HTTP + QUIC
+bin/sidecar              - binary entrypoint: wires up all crates and starts HTTP + QUIC
 crates/
-  primitives             — shared data types (ChainId, XtRequest, PeriodId, etc.)
-  primitives-traits      — integration boundary traits and coordinator error types
-  config                 — clap CLI args + env-var config (SIDECAR_* prefix)
-  proto                  — protobuf wire types + conversions (prost, rollup_v2)
+  primitives             - shared data types (ChainId, XtRequest, PeriodId, etc.)
+  primitives-traits      - integration boundary traits and coordinator error types
+  config                 - clap CLI args + env-var config (SIDECAR_* prefix)
+  proto                  - protobuf wire types + conversions (prost, rollup_v2)
   coordinator/
-    coordinator          — core XT state machine: submission → simulation → voting → decision → builder sync
-    server               — axum HTTP API (see routes below)
+    coordinator          - core XT state machine: submission → simulation → voting → decision → builder sync
+    server               - axum HTTP API (see routes below)
   net/
-    transport            — QUIC client/server, TLS (quinn + rustls + rcgen), framing
-    publisher            — wraps QuicClient for SP communication
-    peer                 — HTTP client for sidecar-to-sidecar coordination
-  mailbox               — UniversalBridgeMailbox ABI helpers, dependency matching, overrides, and in-memory queue
-  simulation             — RPC-backed tx simulation (eth_call with state overrides)
-  metrics                — Prometheus counters/histograms via prometheus-client
-  tracing                — tracing-subscriber init (JSON or pretty output)
+    transport            - QUIC client/server, TLS (quinn + rustls + rcgen), framing
+    publisher            - wraps QuicClient for SP communication
+    peer                 - HTTP client for sidecar-to-sidecar coordination
+  mailbox               - UniversalBridgeMailbox ABI helpers, dependency matching, overrides, and in-memory queue
+  simulation             - RPC-backed tx simulation (eth_call with state overrides)
+  metrics                - Prometheus counters/histograms via prometheus-client
+  tracing                - tracing-subscriber init (JSON or pretty output)
 ```
 
 ### XT Lifecycle (coordinator pipeline)
