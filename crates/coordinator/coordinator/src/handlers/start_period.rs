@@ -24,11 +24,14 @@ impl DefaultCoordinator {
                 if xt.period_id.0 == 0 || xt.period_id >= period_id || xt.confirmed_at.is_some() {
                     continue;
                 }
-                // A prior-period XT that is decided but unconfirmed at rollover
-                // is preempted: tell the builder to drop it and let the lifecycle
-                // path recycle its reserved putInbox nonces. This avoids the
-                // exact-resync race where the canonical nonce read could move
-                // the cursor under an in-flight reservation.
+                // A decided=true XT may have its putInbox tx already executed in
+                // an unfinalized flashblock; tearing it out of the builder pool
+                // now would strand the chain at the missing nonce and block
+                // every later putInbox in the lane. Let the canonical tracker
+                // finish the confirm round-trip on its own.
+                if xt.decision == Some(true) {
+                    continue;
+                }
                 if let Some(super::builder_control::XtBuilderCommand::Abort { instance_id }) =
                     self.local_builder_command(xt, false)
                 {
@@ -91,7 +94,11 @@ mod tests {
     use crate::model::pending_xt::PendingXt;
 
     #[tokio::test]
-    async fn stale_committed_xt_recycles_put_inbox_nonce_when_canonical_unchanged() {
+    async fn decided_committed_xt_keeps_reservation_at_rollover() {
+        // Regression: tearing a decided=true XT out of the builder at rollover
+        // strands the chain at the missing nonce (its putInbox may already be
+        // executed in an unfinalized flashblock). The next reserve must
+        // advance past the still-live reservation, not reuse it.
         let coordinator = DefaultCoordinator::new(
             ChainId(77777),
             None,
@@ -105,14 +112,15 @@ mod tests {
 
         let reserved = coordinator
             .nonce_manager
-            .reserve("xt-77777-stale", 1, || async { Ok(0) })
+            .reserve("xt-77777-decided", 1, || async { Ok(0) })
             .await
             .unwrap();
         assert_eq!(reserved, 0);
 
         {
             let mut state = coordinator.state.write().await;
-            let mut xt = PendingXt::new("xt-77777-stale".to_string(), b"xt-77777-stale".to_vec());
+            let mut xt =
+                PendingXt::new("xt-77777-decided".to_string(), b"xt-77777-decided".to_vec());
             xt.period_id = PeriodId(1);
             xt.record_decision(true);
             xt.raw_txs.insert(ChainId(77777), vec![vec![1]]);
@@ -124,21 +132,18 @@ mod tests {
             .await
             .unwrap();
 
-        // Stale XT was aborted at rollover; its nonce returned to the recycled
-        // pool and the next XT in the new period claims it.
         let next = coordinator
             .nonce_manager
             .reserve("xt-77777-next", 1, || async { Ok(0) })
             .await
             .unwrap();
-        assert_eq!(next, 0);
+        assert_eq!(next, 1);
     }
 
     #[tokio::test]
-    async fn rollover_does_not_reuse_nonce_when_canonical_has_advanced() {
-        // Regression for the burst-at-rollover race: a prior-period in-flight
-        // putInbox tx lands canonically across the rollover boundary, so the
-        // sidecar must not hand its nonce out again.
+    async fn rollover_advances_past_live_reservation_when_canonical_caught_up() {
+        // Canonical overtakes the live reservation across the rollover; the
+        // floor moves up and the stale entry is trimmed on the next reserve.
         let coordinator = DefaultCoordinator::new(
             ChainId(77777),
             None,
@@ -152,14 +157,15 @@ mod tests {
 
         let reserved = coordinator
             .nonce_manager
-            .reserve("xt-77777-stale", 1, || async { Ok(0) })
+            .reserve("xt-77777-decided", 1, || async { Ok(0) })
             .await
             .unwrap();
         assert_eq!(reserved, 0);
 
         {
             let mut state = coordinator.state.write().await;
-            let mut xt = PendingXt::new("xt-77777-stale".to_string(), b"xt-77777-stale".to_vec());
+            let mut xt =
+                PendingXt::new("xt-77777-decided".to_string(), b"xt-77777-decided".to_vec());
             xt.period_id = PeriodId(1);
             xt.record_decision(true);
             xt.raw_txs.insert(ChainId(77777), vec![vec![1]]);
@@ -171,9 +177,6 @@ mod tests {
             .await
             .unwrap();
 
-        // Chain has advanced past the recycled nonce by the time the next XT
-        // is decided; the recycled value must be dropped and the new XT must
-        // start above canonical.
         let next = coordinator
             .nonce_manager
             .reserve("xt-77777-next", 1, || async { Ok(5) })
