@@ -81,11 +81,16 @@ impl PutInboxBuilder for PutInboxTxBuilder {
     }
 
     async fn canonical_nonce_at(&self) -> Result<u64, CoordinatorError> {
+        // `pending` includes the builder's flashblock state, so prior putInbox
+        // txs that have executed but not yet finalized are reflected in the
+        // floor. Using `latest` lags by up to a full block under burst load
+        // and is what produced the residual stale-nonce → MessageNotFound
+        // failures even with per-XT reservation tracking.
         self.provider
             .get_transaction_count(self.signer_address)
-            .block_id(BlockId::latest())
+            .block_id(BlockId::pending())
             .await
-            .map_err(|e| CoordinatorError::Nonce(format!("get canonical nonce: {e}")))
+            .map_err(|e| CoordinatorError::Nonce(format!("get pending nonce: {e}")))
     }
 
     async fn build_put_inbox_tx_with_nonce(
