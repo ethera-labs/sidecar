@@ -93,6 +93,7 @@ impl DefaultCoordinator {
 
     async fn build_put_inbox_transactions(
         &self,
+        instance_id: &str,
         dependencies: &[CrossRollupDependency],
     ) -> Result<Vec<Vec<u8>>, CoordinatorError> {
         if dependencies.is_empty() {
@@ -107,7 +108,7 @@ impl DefaultCoordinator {
         let nonce_builder = builder.clone();
         let start_nonce = self
             .nonce_manager
-            .reserve(dependencies.len(), move || {
+            .reserve(instance_id, dependencies.len(), move || {
                 let builder = nonce_builder.clone();
                 async move { builder.canonical_nonce_at().await }
             })
@@ -136,6 +137,9 @@ impl DefaultCoordinator {
                             .observe(build_started.elapsed().as_secs_f64());
                         metrics.put_inbox_build_error_total.inc();
                     }
+                    // Free the reservation so its nonces can be reused; the
+                    // builder never saw this XT and the lane is otherwise stuck.
+                    self.nonce_manager.release_aborted(instance_id).await;
                     return Err(error);
                 }
             }
@@ -145,59 +149,39 @@ impl DefaultCoordinator {
         Ok(transactions)
     }
 
-    pub(crate) async fn resync_put_inbox_nonce(&self) -> Result<(), CoordinatorError> {
-        let Some(builder) = self.put_inbox_builder.as_ref().cloned() else {
-            return Ok(());
-        };
-
-        self.nonce_manager
-            .resync(move || {
-                let builder = builder.clone();
-                async move { builder.canonical_nonce_at().await }
-            })
-            .await
-    }
-
-    pub(crate) async fn resync_put_inbox_nonce_monotonic(&self) -> Result<(), CoordinatorError> {
-        let Some(builder) = self.put_inbox_builder.as_ref().cloned() else {
-            return Ok(());
-        };
-
-        self.nonce_manager
-            .resync_monotonic(move || {
-                let builder = builder.clone();
-                async move { builder.canonical_nonce_at().await }
-            })
-            .await
-    }
-
     pub(crate) async fn apply_builder_command(
         &self,
         command: XtBuilderCommand,
     ) -> Result<(), CoordinatorError> {
-        let Some(builder) = &self.xt_builder_client else {
-            return Ok(());
-        };
-
         match command {
             XtBuilderCommand::Release {
                 instance_id,
                 dependencies,
             } => {
-                let put_inbox_transactions =
-                    self.build_put_inbox_transactions(&dependencies).await?;
+                let Some(builder) = &self.xt_builder_client else {
+                    return Ok(());
+                };
+                let put_inbox_transactions = self
+                    .build_put_inbox_transactions(&instance_id, &dependencies)
+                    .await?;
                 if let Err(err) = builder
                     .release_xt(&instance_id, put_inbox_transactions)
                     .await
                 {
-                    if let Err(resync_err) = self.resync_put_inbox_nonce().await {
-                        warn!(error = %resync_err, "Failed to resync putInbox nonce after release error");
-                    }
+                    // Builder rejected the release: nonces are unused, recycle them.
+                    self.nonce_manager.release_aborted(&instance_id).await;
+                    warn!(instance_id = %instance_id, error = %err, "Builder rejected XT release; recycling reserved putInbox nonces");
                     return Err(err);
                 }
             }
             XtBuilderCommand::Abort { instance_id } => {
-                builder.abort_xt(&instance_id).await?;
+                if let Some(builder) = &self.xt_builder_client {
+                    builder.abort_xt(&instance_id).await?;
+                }
+                // The XT is no longer in the builder's pool (either we just
+                // asked it to be dropped, or no builder is wired); recycle any
+                // reserved putInbox nonces so the next XT can claim them.
+                self.nonce_manager.release_aborted(&instance_id).await;
             }
         }
 
@@ -213,15 +197,23 @@ impl DefaultCoordinator {
         &self,
         instance_ids: &[String],
     ) -> Result<(), CoordinatorError> {
-        let mut state = self.state.write().await;
-        let now = std::time::Instant::now();
-        for instance_id in instance_ids {
-            if let Some(xt) = state.pending.get_mut(instance_id.as_str()) {
-                xt.confirmed_at = Some(now);
-                info!(instance_id = %instance_id, "XT confirmed included by builder");
-            } else {
-                warn!(instance_id = %instance_id, "confirm received for unknown XT");
+        {
+            let mut state = self.state.write().await;
+            let now = std::time::Instant::now();
+            for instance_id in instance_ids {
+                if let Some(xt) = state.pending.get_mut(instance_id.as_str()) {
+                    xt.confirmed_at = Some(now);
+                    info!(instance_id = %instance_id, "XT confirmed included by builder");
+                } else {
+                    warn!(instance_id = %instance_id, "confirm received for unknown XT");
+                }
             }
+        }
+        // Drop reservations outside the state lock; they own no shared state
+        // and advancing the canonical floor here keeps the nonce manager from
+        // re-handing nonces the chain has just consumed.
+        for instance_id in instance_ids {
+            self.nonce_manager.release_confirmed(instance_id).await;
         }
         Ok(())
     }
@@ -387,7 +379,7 @@ mod tests {
         let dependencies = vec![test_dependency(), test_dependency()];
 
         let transactions = coordinator
-            .build_put_inbox_transactions(&dependencies)
+            .build_put_inbox_transactions("xt-1", &dependencies)
             .await
             .unwrap();
 
@@ -395,11 +387,12 @@ mod tests {
         assert_eq!(transactions[0], 7_u64.to_be_bytes().to_vec());
         assert_eq!(transactions[1], 8_u64.to_be_bytes().to_vec());
 
+        // Chain advances past the in-flight reservation: the next reserve
+        // re-reads canonical and starts from the higher value.
         builder.set_canonical_nonce(11).await;
-        coordinator.resync_put_inbox_nonce().await.unwrap();
 
         let transactions = coordinator
-            .build_put_inbox_transactions(&[test_dependency()])
+            .build_put_inbox_transactions("xt-2", &[test_dependency()])
             .await
             .unwrap();
 
@@ -407,7 +400,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn monotonic_resync_keeps_locally_reserved_put_inbox_nonce() {
+    async fn put_inbox_nonce_stays_above_live_reservation_when_canonical_lags() {
+        // Models the rollover race: canonical view of the chain still reports
+        // the pre-release nonce while an in-flight putInbox tx is propagating.
+        // The reservation must not collide.
         let mut coordinator = DefaultCoordinator::new(
             ChainId(77777),
             None,
@@ -422,22 +418,57 @@ mod tests {
         coordinator.set_put_inbox_builder(builder.clone());
 
         let transactions = coordinator
-            .build_put_inbox_transactions(&[test_dependency(), test_dependency()])
+            .build_put_inbox_transactions("xt-1", &[test_dependency(), test_dependency()])
             .await
             .unwrap();
         assert_eq!(transactions[0], 7_u64.to_be_bytes().to_vec());
         assert_eq!(transactions[1], 8_u64.to_be_bytes().to_vec());
 
+        // Chain has caught up to one of the in-flight txs but the other has
+        // not yet landed; the next reserve must start above the live range.
         builder.set_canonical_nonce(8).await;
-        coordinator
-            .resync_put_inbox_nonce_monotonic()
-            .await
-            .unwrap();
 
         let transactions = coordinator
-            .build_put_inbox_transactions(&[test_dependency()])
+            .build_put_inbox_transactions("xt-2", &[test_dependency()])
             .await
             .unwrap();
         assert_eq!(transactions, vec![9_u64.to_be_bytes().to_vec()]);
+    }
+
+    #[tokio::test]
+    async fn aborted_put_inbox_reservation_is_reused_by_next_xt() {
+        let mut coordinator = DefaultCoordinator::new(
+            ChainId(77777),
+            None,
+            None,
+            None,
+            None,
+            None,
+            1000,
+            VerificationConfig::default(),
+        );
+        let builder = Arc::new(TestPutInboxBuilder::new(7));
+        coordinator.set_put_inbox_builder(builder.clone());
+
+        let transactions = coordinator
+            .build_put_inbox_transactions("xt-1", &[test_dependency()])
+            .await
+            .unwrap();
+        assert_eq!(transactions, vec![7_u64.to_be_bytes().to_vec()]);
+
+        coordinator
+            .apply_builder_command(XtBuilderCommand::Abort {
+                instance_id: "xt-1".to_string(),
+            })
+            .await
+            .unwrap();
+
+        // canonical is still 7 because the aborted tx never landed; the recycled
+        // nonce 7 is handed to the next XT instead of stranding the lane.
+        let transactions = coordinator
+            .build_put_inbox_transactions("xt-2", &[test_dependency()])
+            .await
+            .unwrap();
+        assert_eq!(transactions, vec![7_u64.to_be_bytes().to_vec()]);
     }
 }

@@ -15,29 +15,24 @@ impl DefaultCoordinator {
         period_id: PeriodId,
         superblock_num: SuperblockNumber,
     ) -> Result<(), CoordinatorError> {
-        let (aborted_instance_ids, builder_abort_ids, recovered_local_nonce_lane): (
-            Vec<Vec<u8>>,
-            Vec<String>,
-            bool,
-        ) = {
+        let (aborted_instance_ids, builder_abort_ids): (Vec<Vec<u8>>, Vec<String>) = {
             let mut state = self.state.write().await;
 
             let mut aborted_ids = Vec::new();
             let mut builder_abort_ids = Vec::new();
-            let mut recovered_local_nonce_lane = false;
             for xt in state.pending.values_mut() {
                 if xt.period_id.0 == 0 || xt.period_id >= period_id || xt.confirmed_at.is_some() {
                     continue;
                 }
-                // Edge case: an XT can reach decision=true yet never get builder confirmation
-                // if its released putInbox txs fail later. If we carry that stale local
-                // reservation into the next period, the deferred putInbox nonce manager can
-                // stay ahead of canonical chain nonce and poison later bridge XTs.
+                // A prior-period XT that is decided but unconfirmed at rollover
+                // is preempted: tell the builder to drop it and let the lifecycle
+                // path recycle its reserved putInbox nonces. This avoids the
+                // exact-resync race where the canonical nonce read could move
+                // the cursor under an in-flight reservation.
                 if let Some(super::builder_control::XtBuilderCommand::Abort { instance_id }) =
                     self.local_builder_command(xt, false)
                 {
                     builder_abort_ids.push(instance_id);
-                    recovered_local_nonce_lane = true;
                 }
                 if xt.decision.is_none() {
                     aborted_ids.push(xt.instance_id.clone());
@@ -59,7 +54,7 @@ impl DefaultCoordinator {
                 "Started new period"
             );
 
-            (aborted_ids, builder_abort_ids, recovered_local_nonce_lane)
+            (aborted_ids, builder_abort_ids)
         }; // write lock released before async operations
 
         for instance_id in &builder_abort_ids {
@@ -67,19 +62,6 @@ impl DefaultCoordinator {
                 instance_id: instance_id.clone(),
             })
             .await?;
-        }
-
-        // When we explicitly recovered a stale local reservation lane above, we need an exact
-        // nonce resync. A monotonic resync would preserve the stale in-memory nonce and keep
-        // subsequent putInbox txs one step ahead of the builder execution cursor.
-        let nonce_resync = if recovered_local_nonce_lane {
-            self.resync_put_inbox_nonce().await
-        } else {
-            self.resync_put_inbox_nonce_monotonic().await
-        };
-        if let Err(e) = nonce_resync {
-            error!(error = %e, "Failed to resync putInbox nonce on period change");
-            self.nonce_manager.reset().await;
         }
 
         // Notify the publisher of the abort for each stale XT so it can
@@ -102,53 +84,15 @@ impl DefaultCoordinator {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
-    use alloy::primitives::Address;
-    use async_trait::async_trait;
-    use compose_primitives::{ChainId, CrossRollupDependency};
-    use compose_primitives_traits::PutInboxBuilder;
-    use tokio::sync::Mutex;
+    use compose_primitives::ChainId;
 
     use super::*;
     use crate::coordinator::VerificationConfig;
     use crate::model::pending_xt::PendingXt;
 
-    #[derive(Debug)]
-    struct TestPutInboxBuilder {
-        canonical_nonce: Mutex<u64>,
-    }
-
-    impl TestPutInboxBuilder {
-        fn new(canonical_nonce: u64) -> Self {
-            Self {
-                canonical_nonce: Mutex::new(canonical_nonce),
-            }
-        }
-    }
-
-    #[async_trait]
-    impl PutInboxBuilder for TestPutInboxBuilder {
-        fn signer_address(&self) -> Address {
-            Address::ZERO
-        }
-
-        async fn canonical_nonce_at(&self) -> Result<u64, CoordinatorError> {
-            Ok(*self.canonical_nonce.lock().await)
-        }
-
-        async fn build_put_inbox_tx_with_nonce(
-            &self,
-            _dep: &CrossRollupDependency,
-            nonce: u64,
-        ) -> Result<Vec<u8>, CoordinatorError> {
-            Ok(nonce.to_be_bytes().to_vec())
-        }
-    }
-
     #[tokio::test]
-    async fn stale_committed_xt_releases_reserved_put_inbox_nonce_on_new_period() {
-        let mut coordinator = DefaultCoordinator::new(
+    async fn stale_committed_xt_recycles_put_inbox_nonce_when_canonical_unchanged() {
+        let coordinator = DefaultCoordinator::new(
             ChainId(77777),
             None,
             None,
@@ -158,11 +102,10 @@ mod tests {
             1000,
             VerificationConfig::default(),
         );
-        coordinator.set_put_inbox_builder(Arc::new(TestPutInboxBuilder::new(0)));
 
         let reserved = coordinator
             .nonce_manager
-            .reserve(1, || async { Ok(0) })
+            .reserve("xt-77777-stale", 1, || async { Ok(0) })
             .await
             .unwrap();
         assert_eq!(reserved, 0);
@@ -181,12 +124,62 @@ mod tests {
             .await
             .unwrap();
 
+        // Stale XT was aborted at rollover; its nonce returned to the recycled
+        // pool and the next XT in the new period claims it.
         let next = coordinator
             .nonce_manager
-            .reserve(1, || async { Ok(99) })
+            .reserve("xt-77777-next", 1, || async { Ok(0) })
             .await
             .unwrap();
         assert_eq!(next, 0);
+    }
+
+    #[tokio::test]
+    async fn rollover_does_not_reuse_nonce_when_canonical_has_advanced() {
+        // Regression for the burst-at-rollover race: a prior-period in-flight
+        // putInbox tx lands canonically across the rollover boundary, so the
+        // sidecar must not hand its nonce out again.
+        let coordinator = DefaultCoordinator::new(
+            ChainId(77777),
+            None,
+            None,
+            None,
+            None,
+            None,
+            1000,
+            VerificationConfig::default(),
+        );
+
+        let reserved = coordinator
+            .nonce_manager
+            .reserve("xt-77777-stale", 1, || async { Ok(0) })
+            .await
+            .unwrap();
+        assert_eq!(reserved, 0);
+
+        {
+            let mut state = coordinator.state.write().await;
+            let mut xt = PendingXt::new("xt-77777-stale".to_string(), b"xt-77777-stale".to_vec());
+            xt.period_id = PeriodId(1);
+            xt.record_decision(true);
+            xt.raw_txs.insert(ChainId(77777), vec![vec![1]]);
+            state.pending.insert(xt.id.clone(), xt);
+        }
+
+        coordinator
+            .handle_start_period(PeriodId(2), SuperblockNumber(10))
+            .await
+            .unwrap();
+
+        // Chain has advanced past the recycled nonce by the time the next XT
+        // is decided; the recycled value must be dropped and the new XT must
+        // start above canonical.
+        let next = coordinator
+            .nonce_manager
+            .reserve("xt-77777-next", 1, || async { Ok(5) })
+            .await
+            .unwrap();
+        assert_eq!(next, 5);
     }
 
     #[tokio::test]

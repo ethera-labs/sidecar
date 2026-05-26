@@ -55,10 +55,12 @@ impl DefaultCoordinator {
             .await?;
         }
 
-        if let Err(err) = self.resync_put_inbox_nonce().await {
-            warn!(error = %err, "Failed to resync putInbox nonce after rollback");
-            self.nonce_manager.reset().await;
-        }
+        // A rollback can rewind the canonical chain past prior putInbox txs
+        // signed by this sidecar, dropping the signer's on-chain nonce below
+        // the in-memory floor. Routine `release_aborted` cannot reflect that
+        // because the floor is monotonic; wipe the lane so the next reserve
+        // re-anchors against the post-rollback canonical nonce.
+        self.nonce_manager.reset().await;
 
         for waiters in pending_submissions.into_values() {
             Self::notify_pending_submission_waiters(
