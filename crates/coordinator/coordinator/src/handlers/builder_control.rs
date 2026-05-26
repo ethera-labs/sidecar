@@ -110,7 +110,7 @@ impl DefaultCoordinator {
             .nonce_manager
             .reserve(instance_id, dependencies.len(), move || {
                 let builder = nonce_builder.clone();
-                async move { builder.canonical_nonce_at().await }
+                async move { builder.signer_nonce_floor().await }
             })
             .await?;
 
@@ -284,7 +284,7 @@ mod tests {
             Address::ZERO
         }
 
-        async fn canonical_nonce_at(&self) -> Result<u64, CoordinatorError> {
+        async fn signer_nonce_floor(&self) -> Result<u64, CoordinatorError> {
             Ok(*self.canonical_nonce.lock().await)
         }
 
