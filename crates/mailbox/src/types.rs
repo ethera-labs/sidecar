@@ -14,6 +14,11 @@ pub struct MailboxCall {
     pub label: String,
     pub data: Vec<u8>,
     pub session_id: U256,
+    /// Whether the call frame itself reverted in the trace. A reverted
+    /// `readMessage` is an unmet dependency even when an ancestor frame
+    /// swallows the revert (e.g. ERC-4337 `EntryPoint.handleOps` catches
+    /// inner `UserOp` reverts and the outer transaction still succeeds).
+    pub reverted: bool,
 }
 
 /// Whether a mailbox call is a read (dependency) or write (outbound message).

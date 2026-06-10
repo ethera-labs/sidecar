@@ -296,6 +296,11 @@ impl RpcSimulator {
     }
 
     /// Convert parsed mailbox calls into cross-rollup dependencies and messages.
+    ///
+    /// Only *reverted* `readMessage` frames become dependencies: a read whose
+    /// frame succeeded was already satisfied (on-chain state or overrides) and
+    /// needs no `putInbox` fulfillment, while a reverted read is unmet even if
+    /// an ancestor frame swallowed the revert (ERC-4337 `handleOps`).
     fn extract_mailbox_data(
         &self,
         trace: &Value,
@@ -310,6 +315,7 @@ impl RpcSimulator {
         let dependencies = parsed
             .reads
             .iter()
+            .filter(|call| call.reverted)
             .map(|call| CrossRollupDependency {
                 source_chain_id: call.source_chain,
                 dest_chain_id: call.dest_chain,
@@ -336,6 +342,50 @@ impl RpcSimulator {
             .collect();
 
         (dependencies, outbound_messages)
+    }
+
+    /// Build a `SimulationResult` from the call trace + prestate trace.
+    ///
+    /// A simulation only counts as successful when the top-level frame
+    /// succeeded AND no mailbox `readMessage` frame reverted. The second
+    /// condition matters for transactions that swallow inner reverts (the
+    /// ERC-4337 `EntryPoint` catches a failing `UserOp` and still succeeds at
+    /// the top level): on-chain the inner call would revert with
+    /// `MessageNotFound`, so the dependency must be fulfilled and the
+    /// simulation retried before voting to commit.
+    fn result_from_traces(
+        &self,
+        chain_id: ChainId,
+        trace: &Value,
+        prestate_trace: Result<PreStateFrame, SimulationError>,
+    ) -> SimulationResult {
+        let top_level_ok = trace
+            .get("error")
+            .map(|e| e.as_str().unwrap_or("").is_empty())
+            .unwrap_or(true);
+
+        let mut error_msg = trace
+            .get("error")
+            .and_then(|e| e.as_str())
+            .map(String::from);
+
+        let (dependencies, outbound_messages) = self.extract_mailbox_data(trace, chain_id);
+
+        let success = top_level_ok && dependencies.is_empty();
+        if !success && error_msg.is_none() {
+            error_msg = Some(format!(
+                "{} mailbox readMessage call(s) reverted inside an otherwise successful transaction",
+                dependencies.len()
+            ));
+        }
+
+        SimulationResult {
+            success,
+            error: error_msg,
+            state_overrides: Self::optional_trace_state_overrides(chain_id, prestate_trace),
+            dependencies,
+            outbound_messages,
+        }
     }
 }
 
@@ -367,27 +417,7 @@ impl Simulator for RpcSimulator {
         );
         let trace = trace?;
 
-        let success = trace
-            .get("error")
-            .map(|e| e.as_str().unwrap_or("").is_empty())
-            .unwrap_or(true);
-
-        let error_msg = trace
-            .get("error")
-            .and_then(|e| e.as_str())
-            .map(String::from);
-
-        let (dependencies, outbound_messages) = self.extract_mailbox_data(&trace, chain_id);
-
-        let state_overrides_result = Self::optional_trace_state_overrides(chain_id, prestate_trace);
-
-        Ok(SimulationResult {
-            success,
-            error: error_msg,
-            state_overrides: state_overrides_result,
-            dependencies,
-            outbound_messages,
-        })
+        Ok(self.result_from_traces(chain_id, &trace, prestate_trace))
     }
 
     async fn simulate_with_mailbox(
@@ -434,33 +464,114 @@ impl Simulator for RpcSimulator {
         );
         let trace = trace?;
 
-        let success = trace
-            .get("error")
-            .map(|e| e.as_str().unwrap_or("").is_empty())
-            .unwrap_or(true);
-        let error_msg = trace
-            .get("error")
-            .and_then(|e| e.as_str())
-            .map(String::from);
-        let (dependencies, outbound_messages) = self.extract_mailbox_data(&trace, chain_id);
-        let state_overrides_result = Self::optional_trace_state_overrides(chain_id, prestate_trace);
-
-        Ok(SimulationResult {
-            success,
-            error: error_msg,
-            state_overrides: state_overrides_result,
-            dependencies,
-            outbound_messages,
-        })
+        Ok(self.result_from_traces(chain_id, &trace, prestate_trace))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloy::hex;
     use alloy::primitives::B256;
+    use alloy::sol_types::SolCall;
     use alloy_rpc_types_trace::geth::AccountState;
+    use compose_mailbox::contract::{readMessageCall, MessageHeader};
+    use serde_json::json;
     use std::collections::BTreeMap;
+
+    fn read_calldata(src_chain: u64, dest_chain: u64) -> String {
+        let call = readMessageCall {
+            header: MessageHeader {
+                chainSrc: U256::from(src_chain),
+                chainDest: U256::from(dest_chain),
+                sender: Address::repeat_byte(0x11),
+                receiver: Address::repeat_byte(0x22),
+                sessionId: U256::from(1u64),
+                label: "SEND_ETH".to_string(),
+            },
+        };
+        format!("0x{}", hex::encode(call.abi_encode()))
+    }
+
+    /// `handleOps`-style trace: top level succeeds, inner frame (and its
+    /// mailbox read) reverted. `read_error` toggles whether the read frame
+    /// failed.
+    fn handle_ops_trace(mailbox: Address, read_error: bool) -> Value {
+        let entry_point: Address = "0x0000000071727de22e5e9d8baf0edac6f37da032"
+            .parse()
+            .unwrap();
+        let account = Address::repeat_byte(0x22);
+        let mut read_frame = json!({
+            "from": format!("{account:#x}"),
+            "to": format!("{mailbox:#x}"),
+            "input": read_calldata(77777, 88888),
+        });
+        let mut inner_frame = json!({
+            "from": format!("{entry_point:#x}"),
+            "to": format!("{account:#x}"),
+            "input": "0x",
+        });
+        if read_error {
+            read_frame["error"] = json!("execution reverted");
+            inner_frame["error"] = json!("execution reverted");
+        }
+        inner_frame["calls"] = json!([read_frame]);
+        json!({
+            "from": format!("{account:#x}"),
+            "to": format!("{entry_point:#x}"),
+            "input": "0x765e827f",
+            "calls": [inner_frame],
+        })
+    }
+
+    fn no_prestate() -> Result<PreStateFrame, SimulationError> {
+        Err(SimulationError::Other("no prestate in test".to_string()))
+    }
+
+    #[test]
+    fn swallowed_inner_revert_with_unmet_read_is_not_success() {
+        let mailbox = Address::repeat_byte(0xe5);
+        let simulator = RpcSimulator::new(vec![]).with_mailbox_address(mailbox);
+
+        let trace = handle_ops_trace(mailbox, true);
+        let result = simulator.result_from_traces(ChainId(88888), &trace, no_prestate());
+
+        assert!(!result.success);
+        assert_eq!(result.dependencies.len(), 1);
+        assert_eq!(result.dependencies[0].source_chain_id, ChainId(77777));
+        assert!(result.error.is_some());
+    }
+
+    #[test]
+    fn satisfied_read_in_successful_trace_is_success_with_no_deps() {
+        let mailbox = Address::repeat_byte(0xe5);
+        let simulator = RpcSimulator::new(vec![]).with_mailbox_address(mailbox);
+
+        let trace = handle_ops_trace(mailbox, false);
+        let result = simulator.result_from_traces(ChainId(88888), &trace, no_prestate());
+
+        assert!(result.success);
+        assert!(result.dependencies.is_empty());
+        assert!(result.error.is_none());
+    }
+
+    #[test]
+    fn top_level_revert_with_failed_read_keeps_dependency() {
+        let mailbox = Address::repeat_byte(0xe5);
+        let simulator = RpcSimulator::new(vec![]).with_mailbox_address(mailbox);
+
+        let trace = json!({
+            "from": format!("{:#x}", Address::repeat_byte(0x22)),
+            "to": format!("{mailbox:#x}"),
+            "input": read_calldata(77777, 88888),
+            "error": "execution reverted",
+        });
+        let result = simulator.result_from_traces(ChainId(88888), &trace, no_prestate());
+
+        assert!(!result.success);
+        assert_eq!(result.error.as_deref(), Some("execution reverted"));
+        assert_eq!(result.dependencies.len(), 1);
+    }
 
     #[test]
     fn state_overrides_from_diff_preserves_cleared_slots_and_destroyed_accounts() {

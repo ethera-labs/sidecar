@@ -63,17 +63,21 @@ fn visit_node(
         return;
     }
     let selector = calldata_selector(input);
+    let reverted = node
+        .get("error")
+        .and_then(|e| e.as_str())
+        .is_some_and(|e| !e.is_empty());
 
     if selector == Some(writeMessageCall::SELECTOR) {
         if let Ok(caller) = from_str.parse::<Address>() {
-            if let Some(call) = decode_write(input, caller, local_chain_id) {
+            if let Some(call) = decode_write(input, caller, local_chain_id, reverted) {
                 debug!(label = %call.label, "Parsed mailbox writeMessage call");
                 state.writes.push(call);
             }
         }
     } else if selector == Some(readMessageCall::SELECTOR) {
-        if let Some(call) = decode_read(input, local_chain_id) {
-            debug!(label = %call.label, "Parsed mailbox readMessage call");
+        if let Some(call) = decode_read(input, local_chain_id, reverted) {
+            debug!(label = %call.label, reverted, "Parsed mailbox readMessage call");
             state.reads.push(call);
         }
     }
@@ -85,7 +89,12 @@ fn visit_node(
 /// For bridge ACK flows the header sender can differ from the bridge contract
 /// caller, and simulation must preserve that sender so later `readMessage`
 /// dependencies can match it.
-fn decode_write(input: &str, _caller: Address, local_chain_id: ChainId) -> Option<MailboxCall> {
+fn decode_write(
+    input: &str,
+    _caller: Address,
+    local_chain_id: ChainId,
+    reverted: bool,
+) -> Option<MailboxCall> {
     let data = hex::decode(input.trim_start_matches("0x")).ok()?;
     let call = writeMessageCall::abi_decode(&data).ok()?;
     let header = &call.message.header;
@@ -99,11 +108,12 @@ fn decode_write(input: &str, _caller: Address, local_chain_id: ChainId) -> Optio
         label: header.label.clone(),
         data: call.message.payload.to_vec(),
         session_id: header.sessionId,
+        reverted,
     })
 }
 
 /// Decode a `readMessage(MessageHeader)` call.
-fn decode_read(input: &str, local_chain_id: ChainId) -> Option<MailboxCall> {
+fn decode_read(input: &str, local_chain_id: ChainId, reverted: bool) -> Option<MailboxCall> {
     let data = hex::decode(input.trim_start_matches("0x")).ok()?;
     let call = readMessageCall::abi_decode(&data).ok()?;
     let header = &call.header;
@@ -117,6 +127,7 @@ fn decode_read(input: &str, local_chain_id: ChainId) -> Option<MailboxCall> {
         label: header.label.clone(),
         data: Vec::new(),
         session_id: header.sessionId,
+        reverted,
     })
 }
 
@@ -290,6 +301,64 @@ mod tests {
         assert_eq!(r.receiver, caller);
         assert_eq!(r.label, "SEND_TOKENS");
         assert_eq!(r.session_id, session_id);
+        assert!(!r.reverted);
+    }
+
+    #[test]
+    fn marks_read_as_reverted_when_frame_failed_under_successful_ancestor() {
+        // ERC-4337 shape: EntryPoint.handleOps succeeds at the top level while
+        // the inner account execution (and its mailbox read) reverted.
+        let mailbox: Address = "0xe5d5d610fb9767df117f4076444b45404201a097"
+            .parse()
+            .unwrap();
+        let entry_point: Address = "0x0000000071727de22e5e9d8baf0edac6f37da032"
+            .parse()
+            .unwrap();
+        let account: Address = "0xf5fe1b951c5cdf2d4299f8e63444ff621cd2fed9"
+            .parse()
+            .unwrap();
+        let bridge: Address = "0x1111111111111111111111111111111111111111"
+            .parse()
+            .unwrap();
+        let session_id = U256::from(7u64);
+
+        let read_input = make_read_calldata(77777, 88888, bridge, account, session_id, "SEND_ETH");
+        let write_input =
+            make_write_calldata(77777, bridge, account, session_id, "SEND_ETH", b"payload");
+
+        let trace = json!({
+            "from": format!("{account:#x}"),
+            "to": format!("{entry_point:#x}"),
+            "input": "0x765e827f",
+            "calls": [{
+                "from": format!("{entry_point:#x}"),
+                "to": format!("{account:#x}"),
+                "input": "0x",
+                "error": "execution reverted",
+                "calls": [
+                    {
+                        "from": format!("{account:#x}"),
+                        "to": format!("{mailbox:#x}"),
+                        "input": write_input,
+                    },
+                    {
+                        "from": format!("{account:#x}"),
+                        "to": format!("{mailbox:#x}"),
+                        "input": read_input,
+                        "error": "execution reverted",
+                    },
+                ],
+            }],
+        });
+
+        let parsed = parse_call_trace(&trace, mailbox, ChainId(88888));
+        assert_eq!(parsed.writes.len(), 1);
+        assert!(
+            !parsed.writes[0].reverted,
+            "write frame itself succeeded even though an ancestor reverted"
+        );
+        assert_eq!(parsed.reads.len(), 1);
+        assert!(parsed.reads[0].reverted, "failed read must be marked unmet");
     }
 
     #[test]
