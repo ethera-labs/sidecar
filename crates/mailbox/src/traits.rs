@@ -1,8 +1,8 @@
 //! Mailbox queue and sender trait definitions.
 
 use async_trait::async_trait;
-use compose_primitives::ChainId;
-use compose_proto::MailboxMessage;
+use ethera_spec::ChainId;
+use ethera_spec_proto::MailboxMessage;
 
 use crate::error::MailboxError;
 

@@ -4,14 +4,14 @@ use std::sync::Arc;
 
 use bytes::Bytes;
 use compose_coordinator::coordinator::DefaultCoordinator;
-use compose_primitives::{PeriodId, SuperblockNumber};
-use compose_proto::wire_message::Payload;
+use ethera_spec::{PeriodId, SuperblockNumber};
+use ethera_spec_proto::Payload;
 use prost::Message;
 use tracing::{debug, error, warn};
 
 /// Dispatch an inbound protobuf message from the publisher connection.
 pub async fn handle_publisher_message(coordinator: Arc<DefaultCoordinator>, data: Bytes) {
-    let msg = match compose_proto::WireMessage::decode(data) {
+    let msg = match ethera_spec_proto::Message::decode(data) {
         Ok(m) => m,
         Err(e) => {
             error!(error = %e, "Failed to decode publisher message");

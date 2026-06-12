@@ -2,10 +2,10 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use bytes::Bytes;
-use compose_primitives::ChainId;
 use compose_primitives_traits::{CoordinatorError, PublisherClient};
-use compose_proto::{wire_message::Payload, Vote};
 use compose_transport::traits::Transport;
+use ethera_spec::ChainId;
+use ethera_spec_proto::{Payload, Vote};
 use prost::Message;
 
 /// Publisher connection implementing the `PublisherClient` trait.
@@ -62,7 +62,7 @@ impl PublisherClient for PublisherConnection {
     }
 
     async fn send_vote(&self, instance_id: &[u8], vote: bool) -> Result<(), CoordinatorError> {
-        let msg = compose_proto::WireMessage {
+        let msg = ethera_spec_proto::Message {
             sender_id: String::new(),
             payload: Some(Payload::Vote(Vote {
                 instance_id: instance_id.to_vec(),

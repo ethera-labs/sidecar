@@ -24,7 +24,6 @@ just ci-full        # ci + cargo-deny + cargo-machete
 just run [ARGS]     # cargo run -p sidecar -- [ARGS]
 just release        # cargo build --release -p sidecar
 just doc            # cargo doc --workspace --no-deps --open
-just proto          # regenerate protobuf code (cargo build -p compose-proto)
 ```
 
 Run a single test:
@@ -56,10 +55,9 @@ The workspace contains one binary and many library crates, all prefixed `compose
 ```
 bin/sidecar              - binary entrypoint: wires up all crates and starts HTTP + QUIC
 crates/
-  primitives             - shared data types (ChainId, XtRequest, PeriodId, etc.)
+  primitives             - sidecar-specific data types (InstanceId, XtStatus, CrossRollup*)
   primitives-traits      - integration boundary traits and coordinator error types
   config                 - clap CLI args + env-var config (SIDECAR_* prefix)
-  proto                  - protobuf wire types + conversions (prost, rollup_v2)
   coordinator/
     coordinator          - core XT state machine: submission → simulation → voting → decision → builder sync
     server               - axum HTTP API (see routes below)
@@ -99,7 +97,8 @@ crates/
 ### Publisher (QUIC / SP)
 
 The sidecar optionally connects to a Shared Publisher (SP) via QUIC (`compose-transport`). Messages are length-prefixed
-protobuf frames (`compose-proto`). The SP pushes start-period and start-instance messages that drive the coordinator
+protobuf frames (`ethera-spec-proto`, the canonical wire format shared with the publisher). The SP pushes start-period
+and start-instance messages that drive the coordinator
 state machine.
 
 ### Configuration

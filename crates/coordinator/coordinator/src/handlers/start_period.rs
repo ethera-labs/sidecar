@@ -1,6 +1,6 @@
 //! Start-period handling and period state transitions.
 
-use compose_primitives::{PeriodId, SuperblockNumber};
+use ethera_spec::{PeriodId, SuperblockNumber};
 use tracing::{error, info};
 
 use crate::coordinator::DefaultCoordinator;
@@ -87,7 +87,7 @@ impl DefaultCoordinator {
 
 #[cfg(test)]
 mod tests {
-    use compose_primitives::ChainId;
+    use ethera_spec::ChainId;
 
     use super::*;
     use crate::coordinator::VerificationConfig;

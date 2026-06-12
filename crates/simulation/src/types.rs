@@ -1,6 +1,6 @@
 //! Simulation backend configuration types.
 
-use compose_primitives::ChainId;
+use ethera_spec::ChainId;
 
 /// Configuration for an RPC simulator per chain.
 #[derive(Debug, Clone)]

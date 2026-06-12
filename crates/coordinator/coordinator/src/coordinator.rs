@@ -6,8 +6,9 @@ use std::time::Duration;
 
 use compose_mailbox::traits::MailboxQueue;
 use compose_peer::traits::PeerCoordinator;
-use compose_primitives::{ChainId, InstanceId, PeriodId, SequenceNumber, SuperblockNumber};
+use compose_primitives::InstanceId;
 use compose_simulation::traits::Simulator;
+use ethera_spec::{ChainId, PeriodId, SequenceNumber, SuperblockNumber};
 use prost::Message;
 use reqwest::Client;
 use tokio::sync::{oneshot, Notify, RwLock};
@@ -18,7 +19,7 @@ use compose_metrics::SidecarMetrics;
 use compose_primitives_traits::{
     CoordinatorError, MailboxSender, PublisherClient, PutInboxBuilder, XtBuilderClient,
 };
-use compose_proto::{wire_message::Payload, MailboxMessage};
+use ethera_spec_proto::{MailboxMessage, Payload};
 
 use crate::model::chain_overlay::ChainOverlay;
 use crate::model::pending_xt::PendingXt;
@@ -250,20 +251,21 @@ impl DefaultCoordinator {
     pub async fn cleanup(&self, max_age: Duration) {
         let mut state = self.state.write().await;
         let now = std::time::Instant::now();
-        let mut new_mailbox_index = HashMap::with_capacity(state.pending.len());
+        let mut removed_raw_ids = Vec::new();
         state.pending.retain(|_id, xt| {
-            let age_ref = xt.confirmed_at.or(xt.decided_at);
-            let keep = if let Some(t) = age_ref {
-                now.duration_since(t) <= max_age
-            } else {
-                true
-            };
-            if keep {
-                new_mailbox_index.insert(xt.instance_id.clone(), xt.id.clone());
+            let keep = xt
+                .confirmed_at
+                .or(xt.decided_at)
+                .is_none_or(|t| now.duration_since(t) <= max_age);
+            if !keep {
+                // The XT is dropped by retain, so steal the key instead of cloning.
+                removed_raw_ids.push(std::mem::take(&mut xt.instance_id));
             }
             keep
         });
-        state.mailbox_index = new_mailbox_index;
+        for raw_id in &removed_raw_ids {
+            state.mailbox_index.remove(raw_id);
+        }
         let stale_fps: Vec<String> = state
             .submitted_fingerprints
             .iter()
@@ -450,7 +452,7 @@ impl DefaultCoordinator {
         };
 
         if should_send {
-            let wire = compose_proto::WireMessage {
+            let wire = ethera_spec_proto::Message {
                 sender_id: String::new(),
                 payload: Some(Payload::XtRequest(xt_request)),
             };

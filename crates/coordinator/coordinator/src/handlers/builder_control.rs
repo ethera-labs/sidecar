@@ -243,8 +243,8 @@ mod tests {
 
     use alloy::primitives::{Address, U256};
     use async_trait::async_trait;
-    use compose_primitives::{ChainId, PeriodId, SequenceNumber};
     use compose_primitives_traits::PutInboxBuilder;
+    use ethera_spec::{ChainId, PeriodId, SequenceNumber};
     use tokio::sync::Mutex;
 
     use crate::coordinator::VerificationConfig;

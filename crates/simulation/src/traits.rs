@@ -1,7 +1,8 @@
 //! Simulation trait definitions used by the coordinator.
 
 use async_trait::async_trait;
-use compose_primitives::{ChainId, CrossRollupDependency, SimulationResult, StateOverride};
+use compose_primitives::{CrossRollupDependency, SimulationResult, StateOverride};
+use ethera_spec::ChainId;
 
 use crate::error::SimulationError;
 

@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use compose_primitives::{ChainId, SequenceNumber};
+use ethera_spec::{ChainId, SequenceNumber};
 use tracing::{debug, info};
 
 use crate::coordinator::DefaultCoordinator;
@@ -121,8 +121,8 @@ impl DefaultCoordinator {
 mod tests {
     use std::collections::HashMap;
 
-    use compose_primitives::{ChainId, SequenceNumber};
     use compose_primitives_traits::CoordinatorError;
+    use ethera_spec::{ChainId, SequenceNumber};
 
     use crate::coordinator::{DefaultCoordinator, VerificationConfig};
     use crate::model::pending_xt::PendingXt;

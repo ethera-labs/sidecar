@@ -1,6 +1,6 @@
 //! Peer request payload types for XT forwarding and voting.
 
-use compose_primitives::{ChainId, SequenceNumber};
+use ethera_spec::{ChainId, SequenceNumber};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 

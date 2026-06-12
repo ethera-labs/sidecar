@@ -10,8 +10,8 @@ license.workspace = true
 workspace = true
 
 [dependencies]
-compose-primitives.workspace = true
-compose-proto.workspace = true
+ethera-spec.workspace = true
+ethera-spec-proto.workspace = true
 compose-coordinator.workspace = true
 compose-peer.workspace = true
 prometheus-client.workspace = true

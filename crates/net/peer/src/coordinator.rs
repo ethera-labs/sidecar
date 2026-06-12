@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
-use compose_primitives::{ChainId, SequenceNumber};
+use ethera_spec::{ChainId, SequenceNumber};
 use reqwest::Client;
 use tracing::{error, info, warn};
 

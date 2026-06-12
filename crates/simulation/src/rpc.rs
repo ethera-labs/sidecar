@@ -15,7 +15,8 @@ use alloy_rpc_types_trace::geth::{
 };
 use async_trait::async_trait;
 use compose_mailbox::overrides::{build_mailbox_state_overrides, merge_overrides_owned};
-use compose_primitives::{ChainId, CrossRollupDependency, CrossRollupMessage, SimulationResult};
+use compose_primitives::{CrossRollupDependency, CrossRollupMessage, SimulationResult};
+use ethera_spec::ChainId;
 use reqwest::Client;
 use serde::de::DeserializeOwned;
 use serde::Deserialize;

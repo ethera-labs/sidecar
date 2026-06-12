@@ -8,7 +8,6 @@ members = [
     "bin/sidecar",
     "crates/primitives",
     "crates/primitives-traits",
-    "crates/proto",
     "crates/config",
     "crates/net/transport",
     "crates/net/peer",
@@ -26,7 +25,6 @@ resolver = "2"
 # compose
 compose-primitives = { path = "crates/primitives" }
 compose-primitives-traits = { path = "crates/primitives-traits" }
-compose-proto = { path = "crates/proto" }
 compose-config = { path = "crates/config" }
 compose-transport = { path = "crates/net/transport" }
 compose-peer = { path = "crates/net/peer" }
@@ -37,6 +35,9 @@ compose-coordinator = { path = "crates/coordinator/coordinator" }
 compose-server = { path = "crates/coordinator/server" }
 compose-metrics = { path = "crates/metrics" }
 compose-tracing = { path = "crates/tracing" }
+
+ethera-spec = { git = "https://github.com/ethera-labs/specs.git", branch = "feat/compose-rs", package = "ethera-spec", features = ["serde"] }
+ethera-spec-proto = { git = "https://github.com/ethera-labs/specs.git", branch = "feat/compose-rs", package = "ethera-spec-proto" }
 
 # Async
 tokio = { version = "1.43", features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
@@ -116,3 +117,9 @@ use_self = "warn"
 lto = "thin"
 strip = true
 codegen-units = 1
+
+# Temporary: builds against the local specs checkout until the ethera-spec
+# `serde` feature lands on feat/compose-rs; then remove and `cargo update`.
+[patch."https://github.com/ethera-labs/specs.git"]
+ethera-spec = { path = "../specs/crates/ethera" }
+ethera-spec-proto = { path = "../specs/crates/proto" }

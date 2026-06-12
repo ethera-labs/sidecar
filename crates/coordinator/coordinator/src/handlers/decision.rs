@@ -59,7 +59,7 @@ impl DefaultCoordinator {
 
 #[cfg(test)]
 mod tests {
-    use compose_primitives::ChainId;
+    use ethera_spec::ChainId;
 
     use crate::coordinator::{DefaultCoordinator, VerificationConfig};
     use crate::model::chain_overlay::ChainOverlay;

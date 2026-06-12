@@ -4,8 +4,8 @@ use std::sync::Arc;
 
 use compose_mailbox::traits::MailboxQueue;
 use compose_peer::traits::PeerCoordinator;
-use compose_primitives::ChainId;
 use compose_simulation::traits::Simulator;
+use ethera_spec::ChainId;
 use reqwest::Url;
 
 use compose_metrics::SidecarMetrics;
@@ -156,7 +156,7 @@ impl CoordinatorBuilder {
 
 #[cfg(test)]
 mod tests {
-    use compose_primitives::ChainId;
+    use ethera_spec::ChainId;
 
     use super::*;
 

@@ -7,8 +7,9 @@ use compose_mailbox::matching::{
 };
 use compose_mailbox::overrides::merge_overrides;
 use compose_mailbox::wire;
-use compose_primitives::{ChainId, CrossRollupDependency, CrossRollupMessage, StateOverride};
-use compose_proto::MailboxMessage;
+use compose_primitives::{CrossRollupDependency, CrossRollupMessage, StateOverride};
+use ethera_spec::ChainId;
+use ethera_spec_proto::MailboxMessage;
 use serde::Serialize;
 use tokio::time::{sleep_until, Instant};
 use tracing::{debug, error, info, warn};
@@ -606,11 +607,11 @@ mod tests {
     use async_trait::async_trait;
     use axum::{extract::State, http::StatusCode, routing::post, Router};
     use compose_mailbox::wire;
-    use compose_primitives::ChainId;
     use compose_primitives::StateOverride;
     use compose_primitives::{CrossRollupDependency, SimulationResult};
     use compose_simulation::error::SimulationError;
     use compose_simulation::traits::Simulator;
+    use ethera_spec::ChainId;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::{Arc, Mutex};
     use tokio::{net::TcpListener, task::JoinHandle};
@@ -1110,7 +1111,7 @@ mod tests {
 
             let mut xt = PendingXt::new("xt-77777-13".to_string(), b"xt-77777-13".to_vec());
             xt.raw_txs.insert(ChainId(77777), vec![vec![0xab, 0xcd]]);
-            xt.pending_mailbox.push(compose_proto::MailboxMessage {
+            xt.pending_mailbox.push(ethera_spec_proto::MailboxMessage {
                 source_chain: 88888,
                 destination_chain: 77777,
                 sender: Address::repeat_byte(0x33).as_slice().to_vec(),
@@ -1167,7 +1168,7 @@ mod tests {
             let mut state = coordinator.state.write().await;
             let mut xt = PendingXt::new("xt-77777-14".to_string(), b"xt-77777-14".to_vec());
             xt.raw_txs.insert(ChainId(77777), vec![vec![0xab, 0xcd]]);
-            xt.pending_mailbox.push(compose_proto::MailboxMessage {
+            xt.pending_mailbox.push(ethera_spec_proto::MailboxMessage {
                 source_chain: 88888,
                 destination_chain: 77777,
                 sender: Address::repeat_byte(0x33).as_slice().to_vec(),

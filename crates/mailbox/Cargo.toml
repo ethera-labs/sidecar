@@ -12,7 +12,8 @@ workspace = true
 [dependencies]
 compose-primitives.workspace = true
 compose-primitives-traits.workspace = true
-compose-proto.workspace = true
+ethera-spec.workspace = true
+ethera-spec-proto.workspace = true
 tokio.workspace = true
 async-trait.workspace = true
 serde_json.workspace = true

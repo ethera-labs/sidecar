@@ -3,7 +3,7 @@
 //! Uses `clap` with `#[arg(env = "...")]` for env-var mapping.
 
 use clap::Parser;
-use compose_primitives::ChainId;
+use ethera_spec::ChainId;
 
 mod peer;
 

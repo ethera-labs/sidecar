@@ -1,7 +1,7 @@
 //! Peer coordinator trait and error types.
 
 use async_trait::async_trait;
-use compose_primitives::{ChainId, SequenceNumber};
+use ethera_spec::{ChainId, SequenceNumber};
 use std::collections::HashMap;
 
 /// Peer coordinator for forwarding XTs and votes between sidecars.

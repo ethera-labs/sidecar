@@ -5,82 +5,11 @@
 
 use alloy::primitives::{Address, B256, U256};
 pub use alloy_rpc_types_eth::state::StateOverride;
+use ethera_spec::ChainId;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::fmt;
 use std::sync::Arc;
-
-/// Unique identifier for a rollup chain.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, PartialOrd, Ord)]
-pub struct ChainId(pub u64);
-
-impl fmt::Display for ChainId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl From<u64> for ChainId {
-    fn from(value: u64) -> Self {
-        Self(value)
-    }
-}
-
-impl From<ChainId> for u64 {
-    fn from(value: ChainId) -> Self {
-        value.0
-    }
-}
-
-/// Identifier for a slot/period in the SBCP timeline.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, PartialOrd, Ord)]
-pub struct PeriodId(pub u64);
-
-impl From<u64> for PeriodId {
-    fn from(value: u64) -> Self {
-        Self(value)
-    }
-}
-
-impl From<PeriodId> for u64 {
-    fn from(value: PeriodId) -> Self {
-        value.0
-    }
-}
-
-/// Superblock number for ordering superblocks on L1.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, PartialOrd, Ord)]
-pub struct SuperblockNumber(pub u64);
-
-impl From<u64> for SuperblockNumber {
-    fn from(value: u64) -> Self {
-        Self(value)
-    }
-}
-
-impl From<SuperblockNumber> for u64 {
-    fn from(value: SuperblockNumber) -> Self {
-        value.0
-    }
-}
-
-/// Sequence number for ordering cross-chain transactions within a period.
-#[derive(
-    Debug, Default, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, PartialOrd, Ord,
-)]
-pub struct SequenceNumber(pub u64);
-
-impl From<u64> for SequenceNumber {
-    fn from(value: u64) -> Self {
-        Self(value)
-    }
-}
-
-impl From<SequenceNumber> for u64 {
-    fn from(value: SequenceNumber) -> Self {
-        value.0
-    }
-}
 
 /// Cross-chain transaction identifier (SHA-256 hash).
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -245,13 +174,6 @@ pub struct SimulationResult {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn chain_id_round_trip() {
-        let id = ChainId(901);
-        assert_eq!(u64::from(id), 901);
-        assert_eq!(id.to_string(), "901");
-    }
 
     #[test]
     fn xt_id_from_data() {

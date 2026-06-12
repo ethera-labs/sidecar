@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use axum::extract::{Path, State};
 use axum::Json;
-use compose_primitives::ChainId;
+use ethera_spec::ChainId;
 use serde::{Deserialize, Serialize};
 
 use crate::error::ServerError;

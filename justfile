@@ -48,10 +48,6 @@ ci: fmt-check lint test
 # Run the full CI suite including optional tools
 ci-full: fmt-check lint test deny machete
 
-# Generate protobuf code
-proto:
-    cargo build -p compose-proto
-
 # Run the sidecar binary
 run *ARGS:
     cargo run -p sidecar -- {{ARGS}}

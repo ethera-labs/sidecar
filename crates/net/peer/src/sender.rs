@@ -3,9 +3,9 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
-use compose_primitives::ChainId;
 use compose_primitives_traits::{CoordinatorError, MailboxSender};
-use compose_proto::MailboxMessage;
+use ethera_spec::ChainId;
+use ethera_spec_proto::MailboxMessage;
 use prost::Message;
 use reqwest::Client;
 use tracing::{error, info};

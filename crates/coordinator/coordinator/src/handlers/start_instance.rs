@@ -2,8 +2,9 @@
 
 use std::collections::HashMap;
 
-use compose_primitives::{ChainId, InstanceId, PeriodId, SequenceNumber};
-use compose_proto::StartInstance;
+use compose_primitives::InstanceId;
+use ethera_spec::{ChainId, PeriodId, SequenceNumber};
+use ethera_spec_proto::StartInstance;
 use tracing::{debug, error, info, warn};
 
 use crate::coordinator::DefaultCoordinator;
@@ -229,8 +230,8 @@ impl DefaultCoordinator {
 
 #[cfg(test)]
 mod tests {
-    use compose_primitives::{ChainId, PeriodId};
-    use compose_proto::{StartInstance, TransactionRequest, XtRequest};
+    use ethera_spec::{ChainId, PeriodId};
+    use ethera_spec_proto::{StartInstance, TransactionRequest, XtRequest};
 
     use crate::coordinator::{DefaultCoordinator, VerificationConfig};
 

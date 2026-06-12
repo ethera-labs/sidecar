@@ -1,7 +1,7 @@
 //! Mailbox domain types extracted from simulations.
 
 use alloy::primitives::{Address, U256};
-use compose_primitives::ChainId;
+use ethera_spec::ChainId;
 
 /// A parsed mailbox call from a call trace.
 #[derive(Debug, Clone)]

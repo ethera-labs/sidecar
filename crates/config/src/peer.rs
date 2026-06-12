@@ -3,7 +3,7 @@
 use std::collections::HashSet;
 use std::str::FromStr;
 
-use compose_primitives::ChainId;
+use ethera_spec::ChainId;
 use thiserror::Error;
 
 /// Peer sidecar addresses for CIRC message delivery.

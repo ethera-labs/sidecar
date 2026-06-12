@@ -7,8 +7,9 @@ use alloy::providers::{DynProvider, Provider, ProviderBuilder};
 use alloy::rpc::types::TransactionRequest;
 use alloy::signers::local::PrivateKeySigner;
 use async_trait::async_trait;
-use compose_primitives::{ChainId, CrossRollupDependency};
+use compose_primitives::CrossRollupDependency;
 use compose_primitives_traits::{CoordinatorError, PutInboxBuilder};
+use ethera_spec::ChainId;
 use reqwest::Url;
 
 use crate::abi;

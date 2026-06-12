@@ -10,6 +10,7 @@ license.workspace = true
 workspace = true
 
 [dependencies]
+ethera-spec.workspace = true
 alloy.workspace = true
 alloy-rpc-types-eth.workspace = true
 serde.workspace = true

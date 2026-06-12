@@ -1,6 +1,6 @@
 //! Rollback handling for aborting undecided instances.
 
-use compose_primitives::{PeriodId, SuperblockNumber};
+use ethera_spec::{PeriodId, SuperblockNumber};
 use tracing::warn;
 
 use crate::coordinator::DefaultCoordinator;
@@ -75,7 +75,7 @@ impl DefaultCoordinator {
 
 #[cfg(test)]
 mod tests {
-    use compose_primitives::{ChainId, PeriodId, SuperblockNumber};
+    use ethera_spec::{ChainId, PeriodId, SuperblockNumber};
 
     use crate::coordinator::{DefaultCoordinator, VerificationConfig};
 

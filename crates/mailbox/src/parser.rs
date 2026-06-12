@@ -2,7 +2,7 @@
 
 use alloy::primitives::Address;
 use alloy::sol_types::SolCall;
-use compose_primitives::ChainId;
+use ethera_spec::ChainId;
 use serde_json::Value;
 use tracing::debug;
 

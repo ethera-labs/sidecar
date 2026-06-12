@@ -1288,7 +1288,7 @@ name = "compose-config"
 version = "0.1.0"
 dependencies = [
  "clap",
- "compose-primitives",
+ "ethera-spec",
  "thiserror 2.0.18",
 ]
 
@@ -1305,8 +1305,9 @@ dependencies = [
  "compose-peer",
  "compose-primitives",
  "compose-primitives-traits",
- "compose-proto",
  "compose-simulation",
+ "ethera-spec",
+ "ethera-spec-proto",
  "hex",
  "prost",
  "reqwest",
@@ -1326,7 +1327,8 @@ dependencies = [
  "async-trait",
  "compose-primitives",
  "compose-primitives-traits",
- "compose-proto",
+ "ethera-spec",
+ "ethera-spec-proto",
  "hex",
  "reqwest",
  "serde_json",
@@ -1347,9 +1349,9 @@ name = "compose-peer"
 version = "0.1.0"
 dependencies = [
  "async-trait",
- "compose-primitives",
  "compose-primitives-traits",
- "compose-proto",
+ "ethera-spec",
+ "ethera-spec-proto",
  "futures",
  "hex",
  "prost",
@@ -1366,6 +1368,7 @@ version = "0.1.0"
 dependencies = [
  "alloy",
  "alloy-rpc-types-eth",
+ "ethera-spec",
  "hex",
  "serde",
  "sha2",
@@ -1378,17 +1381,9 @@ dependencies = [
  "alloy",
  "async-trait",
  "compose-primitives",
- "compose-proto",
+ "ethera-spec",
+ "ethera-spec-proto",
  "thiserror 2.0.18",
-]
-
-[[package]]
-name = "compose-proto"
-version = "0.1.0"
-dependencies = [
- "compose-primitives",
- "hex",
- "prost",
 ]
 
 [[package]]
@@ -1397,10 +1392,10 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "bytes",
- "compose-primitives",
  "compose-primitives-traits",
- "compose-proto",
  "compose-transport",
+ "ethera-spec",
+ "ethera-spec-proto",
  "prost",
 ]
 
@@ -1412,8 +1407,8 @@ dependencies = [
  "bytes",
  "compose-coordinator",
  "compose-peer",
- "compose-primitives",
- "compose-proto",
+ "ethera-spec",
+ "ethera-spec-proto",
  "hex",
  "prometheus-client",
  "prost",
@@ -1435,6 +1430,7 @@ dependencies = [
  "async-trait",
  "compose-mailbox",
  "compose-primitives",
+ "ethera-spec",
  "reqwest",
  "serde",
  "serde_json",
@@ -1866,6 +1862,21 @@ checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "ethera-spec"
+version = "0.1.0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
+name = "ethera-spec-proto"
+version = "0.1.0"
+dependencies = [
+ "ethera-spec",
+ "prost",
 ]
 
 [[package]]
