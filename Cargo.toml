@@ -117,9 +117,3 @@ use_self = "warn"
 lto = "thin"
 strip = true
 codegen-units = 1
-
-# Temporary: builds against the local specs checkout until the ethera-spec
-# `serde` feature lands on feat/compose-rs; then remove and `cargo update`.
-[patch."https://github.com/ethera-labs/specs.git"]
-ethera-spec = { path = "../specs/crates/ethera" }
-ethera-spec-proto = { path = "../specs/crates/proto" }

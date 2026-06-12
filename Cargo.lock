@@ -1867,6 +1867,7 @@ dependencies = [
 [[package]]
 name = "ethera-spec"
 version = "0.1.0"
+source = "git+https://github.com/ethera-labs/specs.git?branch=feat%2Fcompose-rs#04007510a2abc83c85d690afb66f2406908afc92"
 dependencies = [
  "serde",
 ]
@@ -1874,6 +1875,7 @@ dependencies = [
 [[package]]
 name = "ethera-spec-proto"
 version = "0.1.0"
+source = "git+https://github.com/ethera-labs/specs.git?branch=feat%2Fcompose-rs#04007510a2abc83c85d690afb66f2406908afc92"
 dependencies = [
  "ethera-spec",
  "prost",
