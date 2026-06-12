@@ -8,7 +8,7 @@ use compose_mailbox::traits::MailboxQueue;
 use compose_peer::traits::PeerCoordinator;
 use compose_primitives::InstanceId;
 use compose_simulation::traits::Simulator;
-use ethera_spec::{ChainId, PeriodId, SequenceNumber, SuperblockNumber};
+use ethera_spec::{ChainId, PeriodId, SequenceNumber};
 use prost::Message;
 use reqwest::Client;
 use tokio::sync::{oneshot, Notify, RwLock};
@@ -20,6 +20,7 @@ use compose_primitives_traits::{
     CoordinatorError, MailboxSender, PublisherClient, PutInboxBuilder, XtBuilderClient,
 };
 use ethera_spec_proto::{MailboxMessage, Payload};
+use ethera_spec_sbcp::InstanceSequence;
 
 use crate::model::chain_overlay::ChainOverlay;
 use crate::model::pending_xt::PendingXt;
@@ -43,10 +44,12 @@ pub struct VerificationConfig {
 #[derive(Debug)]
 pub(crate) struct CoordinatorState {
     pub pending: HashMap<InstanceId, PendingXt>,
-    pub current_period_id: PeriodId,
-    pub current_superblock_num: SuperblockNumber,
-    pub period_initialized: bool,
-    pub last_sequence_num: SequenceNumber,
+    /// Current period from the publisher, or `None` before the first
+    /// `StartPeriod` and after a `Rollback` until the next one. No instance is
+    /// admitted while `None`.
+    pub current_period: Option<PeriodId>,
+    /// Per-period instance sequence watermark (reset each period).
+    pub instance_sequence: InstanceSequence,
     pub last_known_blocks: HashMap<ChainId, u64>,
     /// Monotonic counter for locally-originated XTs in standalone mode.
     pub origin_seq: SequenceNumber,
@@ -83,10 +86,8 @@ impl CoordinatorState {
     fn new() -> Self {
         Self {
             pending: HashMap::new(),
-            current_period_id: PeriodId(0),
-            current_superblock_num: SuperblockNumber(0),
-            period_initialized: false,
-            last_sequence_num: SequenceNumber(0),
+            current_period: None,
+            instance_sequence: InstanceSequence::default(),
             last_known_blocks: HashMap::new(),
             origin_seq: SequenceNumber(0),
             chain_overlay: HashMap::new(),

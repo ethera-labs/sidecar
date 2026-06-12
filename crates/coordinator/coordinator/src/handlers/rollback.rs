@@ -1,6 +1,7 @@
 //! Rollback handling for aborting undecided instances.
 
-use ethera_spec::{PeriodId, SuperblockNumber};
+use ethera_spec::PeriodId;
+use ethera_spec_sbcp::InstanceSequence;
 use tracing::warn;
 
 use crate::coordinator::DefaultCoordinator;
@@ -30,10 +31,8 @@ impl DefaultCoordinator {
             }
         }
 
-        state.period_initialized = false;
-        state.current_period_id = period_id;
-        state.current_superblock_num = SuperblockNumber(last_finalized_superblock_num + 1);
-        state.last_sequence_num = Default::default();
+        state.current_period = None;
+        state.instance_sequence = InstanceSequence::default();
         state.last_known_blocks.clear();
         state.chain_overlay.clear();
         state.mailbox_buffer.clear();
@@ -75,12 +74,12 @@ impl DefaultCoordinator {
 
 #[cfg(test)]
 mod tests {
-    use ethera_spec::{ChainId, PeriodId, SuperblockNumber};
+    use ethera_spec::{ChainId, PeriodId};
 
     use crate::coordinator::{DefaultCoordinator, VerificationConfig};
 
     #[tokio::test]
-    async fn handle_rollback_updates_period_and_superblock() {
+    async fn handle_rollback_closes_period() {
         let coordinator = DefaultCoordinator::new(
             ChainId(77777),
             None,
@@ -92,12 +91,9 @@ mod tests {
             VerificationConfig::default(),
         );
 
-        // Set initial state.
         {
             let mut state = coordinator.state.write().await;
-            state.current_period_id = PeriodId(10);
-            state.current_superblock_num = SuperblockNumber(100);
-            state.period_initialized = true;
+            state.current_period = Some(PeriodId(10));
         }
 
         coordinator
@@ -106,8 +102,6 @@ mod tests {
             .unwrap();
 
         let state = coordinator.state.read().await;
-        assert_eq!(state.current_period_id, PeriodId(8));
-        assert_eq!(state.current_superblock_num, SuperblockNumber(51));
-        assert!(!state.period_initialized);
+        assert!(state.current_period.is_none());
     }
 }

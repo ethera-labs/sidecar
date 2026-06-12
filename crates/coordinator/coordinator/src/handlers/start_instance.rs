@@ -72,63 +72,31 @@ impl DefaultCoordinator {
             return Err(CoordinatorError::TooManyPendingInstances(MAX_PENDING_XTS));
         }
 
-        if !state.period_initialized {
-            drop(state);
-            self.resolve_pending_submission(
-                &fingerprint,
-                Err(CoordinatorError::PeriodNotInitialized.to_string()),
-            )
-            .await;
-            warn!(instance_id = %instance_id, "Period not initialized, rejecting");
-            self.reject_start_instance(&instance_id, msg).await;
-            return Ok(());
-        }
-
         let msg_period = PeriodId(msg.period_id);
-        let current_period = state.current_period_id;
-        if msg_period < current_period {
-            drop(state);
-            self.resolve_pending_submission(
-                &fingerprint,
-                Err(format!(
-                    "publisher start-instance rejected: stale period {} < current {}",
-                    msg_period.0, current_period.0
-                )),
-            )
-            .await;
-            warn!(instance_id = %instance_id, msg_period = msg_period.0, current_period = current_period.0, "Stale period, rejecting");
-            self.reject_start_instance(&instance_id, msg).await;
-            return Ok(());
-        }
-        if msg_period > current_period {
-            drop(state);
-            self.resolve_pending_submission(
-                &fingerprint,
-                Err(format!(
-                    "publisher start-instance rejected: future period {} > current {}",
-                    msg_period.0, current_period.0
-                )),
-            )
-            .await;
-            warn!(instance_id = %instance_id, msg_period = msg_period.0, current_period = current_period.0, "Future period (last block still building), rejecting");
-            self.reject_start_instance(&instance_id, msg).await;
-            return Ok(());
-        }
-
         let msg_seq = SequenceNumber(msg.sequence_number);
-        if msg_seq <= state.last_sequence_num {
+        let rejection = match state.current_period {
+            None => Some(CoordinatorError::PeriodNotInitialized),
+            Some(current) if msg_period != current => Some(CoordinatorError::PeriodMismatch),
+            Some(_) => state
+                .instance_sequence
+                .advance(msg_seq)
+                .err()
+                .map(|_| CoordinatorError::StaleSequence),
+        };
+        if let Some(err) = rejection {
             drop(state);
-            self.resolve_pending_submission(
-                &fingerprint,
-                Err(CoordinatorError::StaleSequence.to_string()),
-            )
-            .await;
-            warn!(instance_id = %instance_id, "Stale sequence, rejecting");
+            self.resolve_pending_submission(&fingerprint, Err(err.to_string()))
+                .await;
+            warn!(
+                instance_id = %instance_id,
+                period_id = msg.period_id,
+                sequence = msg.sequence_number,
+                error = %err,
+                "StartInstance rejected"
+            );
             self.reject_start_instance(&instance_id, msg).await;
             return Ok(());
         }
-
-        state.last_sequence_num = msg_seq;
 
         let mut xt = PendingXt::new(instance_id.to_string(), msg.instance_id.clone());
         xt.period_id = msg_period;
@@ -264,8 +232,7 @@ mod tests {
 
         {
             let mut state = coordinator.state.write().await;
-            state.period_initialized = true;
-            state.current_period_id = PeriodId(1);
+            state.current_period = Some(PeriodId(1));
         }
 
         coordinator
@@ -279,6 +246,37 @@ mod tests {
 
         let state = coordinator.state.read().await;
         assert_eq!(state.pending.len(), 2);
-        assert_eq!(state.last_sequence_num.0, 2);
+    }
+
+    #[tokio::test]
+    async fn handle_start_instance_rejects_non_advancing_sequence() {
+        let coordinator = DefaultCoordinator::new(
+            ChainId(77777),
+            None,
+            None,
+            None,
+            None,
+            None,
+            1000,
+            VerificationConfig::default(),
+        );
+
+        {
+            let mut state = coordinator.state.write().await;
+            state.current_period = Some(PeriodId(1));
+        }
+
+        coordinator
+            .handle_start_instance(&start_instance(2))
+            .await
+            .unwrap();
+
+        // A fresh instance reusing sequence 2 is rejected by the watermark.
+        let mut replay = start_instance(2);
+        replay.instance_id = b"xt-replay".to_vec();
+        coordinator.handle_start_instance(&replay).await.unwrap();
+
+        let state = coordinator.state.read().await;
+        assert_eq!(state.pending.len(), 1);
     }
 }

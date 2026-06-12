@@ -38,6 +38,7 @@ compose-tracing = { path = "crates/tracing" }
 
 ethera-spec = { git = "https://github.com/ethera-labs/specs.git", branch = "feat/compose-rs", package = "ethera-spec", features = ["serde"] }
 ethera-spec-proto = { git = "https://github.com/ethera-labs/specs.git", branch = "feat/compose-rs", package = "ethera-spec-proto" }
+ethera-spec-sbcp = { git = "https://github.com/ethera-labs/specs.git", branch = "feat/compose-rs", package = "ethera-spec-sbcp" }
 
 # Async
 tokio = { version = "1.43", features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
