@@ -2,23 +2,22 @@
 
 use std::collections::HashMap;
 
-use ethera_spec::ChainId;
-use ethera_spec_proto::{TransactionRequest, XtRequest};
+use ethera_spec::{ChainId, TransactionRequest, XtRequest};
 use prost::Message;
 use sha2::{Digest, Sha256};
 
-/// Build a protobuf `XtRequest` from raw transactions keyed by chain.
+/// Build a domain `XtRequest` from raw transactions keyed by chain.
 pub fn build_xt_request(txs: &HashMap<ChainId, Vec<Vec<u8>>>) -> XtRequest {
     if txs.is_empty() {
         return XtRequest {
-            transaction_requests: Vec::new(),
+            transactions: Vec::new(),
         };
     }
 
     let mut chain_ids: Vec<ChainId> = txs.keys().copied().collect();
     chain_ids.sort();
 
-    let transaction_requests = chain_ids
+    let transactions = chain_ids
         .iter()
         .filter_map(|chain_id| {
             let chain_txs = txs.get(chain_id)?;
@@ -26,20 +25,19 @@ pub fn build_xt_request(txs: &HashMap<ChainId, Vec<Vec<u8>>>) -> XtRequest {
                 return None;
             }
             Some(TransactionRequest {
-                chain_id: chain_id.0,
-                transaction: chain_txs.clone(),
+                chain_id: *chain_id,
+                transactions: chain_txs.clone(),
             })
         })
         .collect();
 
-    XtRequest {
-        transaction_requests,
-    }
+    XtRequest { transactions }
 }
 
 /// Compute a fingerprint for an `XtRequest` for deduplication.
 pub fn xt_request_fingerprint(req: &XtRequest) -> String {
-    let data = req.encode_to_vec();
+    let proto = ethera_spec_proto::XtRequest::from(req);
+    let data = proto.encode_to_vec();
     let hash = Sha256::digest(&data);
     hex::encode(&hash[..16])
 }
@@ -55,9 +53,9 @@ mod tests {
         txs.insert(ChainId(901), vec![vec![1]]);
 
         let req = build_xt_request(&txs);
-        assert_eq!(req.transaction_requests.len(), 2);
+        assert_eq!(req.transactions.len(), 2);
         // First entry should be chain 901.
-        assert_eq!(ChainId(req.transaction_requests[0].chain_id), ChainId(901));
+        assert_eq!(req.transactions[0].chain_id, ChainId(901));
     }
 
     #[test]

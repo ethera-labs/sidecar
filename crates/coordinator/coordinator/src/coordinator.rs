@@ -400,9 +400,9 @@ impl DefaultCoordinator {
 
     /// Submit a cross-chain transaction.
     ///
-    /// In publisher-connected mode, the XT is encoded as an `XtRequest` protobuf
-    /// and sent to the publisher, which assigns the instance ID. In standalone
-    /// mode, a local ID is generated and the XT is forwarded to peer sidecars.
+    /// In publisher-connected mode, the XT is sent to the publisher, which
+    /// assigns the instance ID. In standalone mode, a local ID is generated and
+    /// the XT is forwarded to peer sidecars.
     pub async fn submit_xt(
         &self,
         txs: HashMap<ChainId, Vec<Vec<u8>>>,
@@ -448,9 +448,10 @@ impl DefaultCoordinator {
         };
 
         if should_send {
+            let wire_xt_request = ethera_spec_proto::XtRequest::from(&xt_request);
             let wire = ethera_spec_proto::Message {
                 sender_id: String::new(),
-                payload: Some(Payload::XtRequest(xt_request)),
+                payload: Some(Payload::XtRequest(wire_xt_request)),
             };
             let data = wire.encode_to_vec();
 

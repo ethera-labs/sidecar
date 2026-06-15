@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 use compose_primitives::InstanceId;
-use ethera_spec::{ChainId, PeriodId, SequenceNumber};
+use ethera_spec::{chains_from_request, ChainId, Instance as SpecInstance};
 use ethera_spec_proto::StartInstance;
 use tracing::{debug, error, info, warn};
 
@@ -20,34 +20,51 @@ impl DefaultCoordinator {
     /// Process a new instance from the publisher. Validates the period and
     /// sequence, decodes transactions, and registers the XT.
     pub async fn handle_start_instance(&self, msg: &StartInstance) -> Result<(), CoordinatorError> {
-        let instance_id = InstanceId::from_publisher_bytes(&msg.instance_id);
-        let xt_request = msg
-            .xt_request
-            .as_ref()
-            .ok_or_else(|| CoordinatorError::Other("missing xt_request".to_string()))?;
+        let Some(proto_xt_request) = msg.xt_request.as_ref() else {
+            return Err(CoordinatorError::Other("missing xt_request".to_string()));
+        };
 
-        // Check if local chain participates.
-        let mut includes_local = false;
-        for req in &xt_request.transaction_requests {
-            let chain_id = ChainId(req.chain_id);
-            if chain_id == self.chain_id && !req.transaction.is_empty() {
-                includes_local = true;
-                break;
+        let xt_request = ethera_spec::XtRequest::from(proto_xt_request);
+        let fingerprint = xt_request_fingerprint(&xt_request);
+        let spec_instance = match SpecInstance::try_from(msg) {
+            Ok(instance) => instance,
+            Err(err) => {
+                let instance_id = InstanceId::from_publisher_bytes(&msg.instance_id);
+                let error = format!("invalid start-instance: {err}");
+                self.resolve_pending_submission(&fingerprint, Err(error.clone()))
+                    .await;
+                warn!(
+                    instance_id = %instance_id,
+                    period_id = msg.period_id,
+                    sequence = msg.sequence_number,
+                    error,
+                    "StartInstance rejected"
+                );
+                self.reject_start_instance(&instance_id, msg).await;
+                return Ok(());
             }
-        }
+        };
+
+        let instance_id = InstanceId::from_publisher_bytes(spec_instance.id.as_bytes());
+        let participant_chains = chains_from_request(&spec_instance.xt_request);
 
         // Decode transactions per chain.
         let mut raw_txs: HashMap<ChainId, Vec<Vec<u8>>> = HashMap::new();
-        for req in &xt_request.transaction_requests {
-            let chain_id = ChainId(req.chain_id);
-            for tx_bytes in &req.transaction {
-                raw_txs.entry(chain_id).or_default().push(tx_bytes.clone());
+        for req in &spec_instance.xt_request.transactions {
+            for tx_bytes in &req.transactions {
+                raw_txs
+                    .entry(req.chain_id)
+                    .or_default()
+                    .push(tx_bytes.clone());
             }
         }
 
+        let includes_local = participant_chains.contains(&self.chain_id)
+            && raw_txs
+                .get(&self.chain_id)
+                .is_some_and(|txs| !txs.is_empty());
         let sender_nonces = build_sender_nonce_cache(&raw_txs);
 
-        let fingerprint = xt_request_fingerprint(xt_request);
         let mut state = self.state.write().await;
 
         if state.pending.contains_key(&instance_id) {
@@ -72,8 +89,8 @@ impl DefaultCoordinator {
             return Err(CoordinatorError::TooManyPendingInstances(MAX_PENDING_XTS));
         }
 
-        let msg_period = PeriodId(msg.period_id);
-        let msg_seq = SequenceNumber(msg.sequence_number);
+        let msg_period = spec_instance.period_id;
+        let msg_seq = spec_instance.sequence_number;
         if let Err(err) = state
             .publisher_period
             .accept_start_instance(msg_period, msg_seq)
@@ -92,7 +109,8 @@ impl DefaultCoordinator {
             return Ok(());
         }
 
-        let mut xt = PendingXt::new(instance_id.to_string(), msg.instance_id.clone());
+        let raw_instance_id = spec_instance.id.as_bytes().to_vec();
+        let mut xt = PendingXt::new(instance_id.to_string(), raw_instance_id.clone());
         xt.period_id = msg_period;
         xt.sequence_num = msg_seq;
         xt.raw_txs = raw_txs;
@@ -105,11 +123,11 @@ impl DefaultCoordinator {
 
         state
             .mailbox_index
-            .insert(msg.instance_id.clone(), instance_id.clone());
+            .insert(raw_instance_id.clone(), instance_id.clone());
         state.pending.insert(instance_id.clone(), xt);
 
         // Drain messages that arrived before the XT was registered (race window).
-        let buffered = state.drain_mailbox_buffer(&msg.instance_id);
+        let buffered = state.drain_mailbox_buffer(&raw_instance_id);
         if !buffered.is_empty() {
             if let Some(pending_xt) = state.pending.get_mut(&instance_id) {
                 debug!(
@@ -198,8 +216,11 @@ mod tests {
     use crate::coordinator::{DefaultCoordinator, VerificationConfig};
 
     fn start_instance(sequence_number: u64) -> StartInstance {
+        let mut instance_id = [0_u8; 32];
+        instance_id[24..].copy_from_slice(&sequence_number.to_be_bytes());
+
         StartInstance {
-            instance_id: format!("xt-{sequence_number}").into_bytes(),
+            instance_id: instance_id.to_vec(),
             period_id: 1,
             sequence_number,
             xt_request: Some(XtRequest {
@@ -274,11 +295,38 @@ mod tests {
 
         // A fresh instance reusing sequence 2 is rejected by the watermark.
         let mut replay = start_instance(2);
-        replay.instance_id = b"xt-replay".to_vec();
+        replay.instance_id = [0xff; 32].to_vec();
         coordinator.handle_start_instance(&replay).await.unwrap();
 
         let state = coordinator.state.read().await;
         assert_eq!(state.pending.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn handle_start_instance_rejects_malformed_instance_id() {
+        let coordinator = DefaultCoordinator::new(
+            ChainId(77777),
+            None,
+            None,
+            None,
+            None,
+            None,
+            1000,
+            VerificationConfig::default(),
+        );
+
+        {
+            let mut state = coordinator.state.write().await;
+            state.publisher_period.start(PeriodId(1));
+        }
+
+        let mut malformed = start_instance(1);
+        malformed.instance_id = b"not-32-bytes".to_vec();
+
+        coordinator.handle_start_instance(&malformed).await.unwrap();
+
+        let state = coordinator.state.read().await;
+        assert!(state.pending.is_empty());
     }
 
     #[tokio::test]
