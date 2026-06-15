@@ -1,7 +1,6 @@
 //! Start-period handling and period state transitions.
 
 use ethera_spec::{PeriodId, SuperblockNumber};
-use ethera_spec_sbcp::InstanceSequence;
 use tracing::{error, info};
 
 use crate::coordinator::DefaultCoordinator;
@@ -44,8 +43,7 @@ impl DefaultCoordinator {
                 }
             }
 
-            state.current_period = Some(period_id);
-            state.instance_sequence = InstanceSequence::default();
+            state.publisher_period.start(period_id);
             state.last_known_blocks.clear();
             state.chain_overlay.clear();
 

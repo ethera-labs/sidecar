@@ -1,7 +1,6 @@
 //! Rollback handling for aborting undecided instances.
 
 use ethera_spec::PeriodId;
-use ethera_spec_sbcp::InstanceSequence;
 use tracing::warn;
 
 use crate::coordinator::DefaultCoordinator;
@@ -31,8 +30,7 @@ impl DefaultCoordinator {
             }
         }
 
-        state.current_period = None;
-        state.instance_sequence = InstanceSequence::default();
+        state.publisher_period.close();
         state.last_known_blocks.clear();
         state.chain_overlay.clear();
         state.mailbox_buffer.clear();
@@ -93,7 +91,7 @@ mod tests {
 
         {
             let mut state = coordinator.state.write().await;
-            state.current_period = Some(PeriodId(10));
+            state.publisher_period.start(PeriodId(10));
         }
 
         coordinator
@@ -102,6 +100,6 @@ mod tests {
             .unwrap();
 
         let state = coordinator.state.read().await;
-        assert!(state.current_period.is_none());
+        assert!(state.publisher_period.current().is_none());
     }
 }

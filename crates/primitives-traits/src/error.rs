@@ -1,5 +1,6 @@
 //! Coordinator error definitions.
 
+use ethera_spec::{PeriodId, SequenceNumber};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -19,11 +20,23 @@ pub enum CoordinatorError {
     #[error("period not initialized")]
     PeriodNotInitialized,
 
-    #[error("period mismatch")]
-    PeriodMismatch,
+    #[error("stale period: received {received}, current {current}")]
+    StalePeriod {
+        current: PeriodId,
+        received: PeriodId,
+    },
 
-    #[error("stale sequence number")]
-    StaleSequence,
+    #[error("future period: received {received}, current {current}")]
+    FuturePeriod {
+        current: PeriodId,
+        received: PeriodId,
+    },
+
+    #[error("stale sequence number: received {received}, last accepted {last}")]
+    StaleSequence {
+        last: SequenceNumber,
+        received: SequenceNumber,
+    },
 
     #[error("no transactions provided")]
     NoTransactions,

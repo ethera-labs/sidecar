@@ -15,7 +15,6 @@ compose-primitives-traits.workspace = true
 compose-metrics.workspace = true
 ethera-spec.workspace = true
 ethera-spec-proto.workspace = true
-ethera-spec-sbcp.workspace = true
 compose-mailbox.workspace = true
 compose-simulation.workspace = true
 compose-peer.workspace = true

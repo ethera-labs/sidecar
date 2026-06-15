@@ -8,7 +8,7 @@ use compose_mailbox::traits::MailboxQueue;
 use compose_peer::traits::PeerCoordinator;
 use compose_primitives::InstanceId;
 use compose_simulation::traits::Simulator;
-use ethera_spec::{ChainId, PeriodId, SequenceNumber};
+use ethera_spec::{ChainId, SequenceNumber};
 use prost::Message;
 use reqwest::Client;
 use tokio::sync::{oneshot, Notify, RwLock};
@@ -20,10 +20,10 @@ use compose_primitives_traits::{
     CoordinatorError, MailboxSender, PublisherClient, PutInboxBuilder, XtBuilderClient,
 };
 use ethera_spec_proto::{MailboxMessage, Payload};
-use ethera_spec_sbcp::InstanceSequence;
 
 use crate::model::chain_overlay::ChainOverlay;
 use crate::model::pending_xt::PendingXt;
+use crate::model::publisher_period::PublisherPeriod;
 use crate::model::xt_status::{determine_xt_status, XtStatusResponse};
 use crate::nonce_manager::DeferredNonceManager;
 use crate::pipeline::delivery::build_sender_nonce_cache;
@@ -44,12 +44,8 @@ pub struct VerificationConfig {
 #[derive(Debug)]
 pub(crate) struct CoordinatorState {
     pub pending: HashMap<InstanceId, PendingXt>,
-    /// Current period from the publisher, or `None` before the first
-    /// `StartPeriod` and after a `Rollback` until the next one. No instance is
-    /// admitted while `None`.
-    pub current_period: Option<PeriodId>,
-    /// Per-period instance sequence watermark (reset each period).
-    pub instance_sequence: InstanceSequence,
+    /// Publisher period and per-period `StartInstance` ordering state.
+    pub publisher_period: PublisherPeriod,
     pub last_known_blocks: HashMap<ChainId, u64>,
     /// Monotonic counter for locally-originated XTs in standalone mode.
     pub origin_seq: SequenceNumber,
@@ -86,8 +82,7 @@ impl CoordinatorState {
     fn new() -> Self {
         Self {
             pending: HashMap::new(),
-            current_period: None,
-            instance_sequence: InstanceSequence::default(),
+            publisher_period: PublisherPeriod::default(),
             last_known_blocks: HashMap::new(),
             origin_seq: SequenceNumber(0),
             chain_overlay: HashMap::new(),
@@ -602,6 +597,7 @@ impl DefaultCoordinator {
 mod tests {
     use super::*;
     use async_trait::async_trait;
+    use ethera_spec::PeriodId;
     use std::collections::HashMap;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;

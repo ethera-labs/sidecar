@@ -74,16 +74,10 @@ impl DefaultCoordinator {
 
         let msg_period = PeriodId(msg.period_id);
         let msg_seq = SequenceNumber(msg.sequence_number);
-        let rejection = match state.current_period {
-            None => Some(CoordinatorError::PeriodNotInitialized),
-            Some(current) if msg_period != current => Some(CoordinatorError::PeriodMismatch),
-            Some(_) => state
-                .instance_sequence
-                .advance(msg_seq)
-                .err()
-                .map(|_| CoordinatorError::StaleSequence),
-        };
-        if let Some(err) = rejection {
+        if let Err(err) = state
+            .publisher_period
+            .accept_start_instance(msg_period, msg_seq)
+        {
             drop(state);
             self.resolve_pending_submission(&fingerprint, Err(err.to_string()))
                 .await;
@@ -217,6 +211,13 @@ mod tests {
         }
     }
 
+    fn start_instance_for_period(period_id: u64, sequence_number: u64) -> StartInstance {
+        StartInstance {
+            period_id,
+            ..start_instance(sequence_number)
+        }
+    }
+
     #[tokio::test]
     async fn handle_start_instance_allows_multiple_local_xts() {
         let coordinator = DefaultCoordinator::new(
@@ -232,7 +233,7 @@ mod tests {
 
         {
             let mut state = coordinator.state.write().await;
-            state.current_period = Some(PeriodId(1));
+            state.publisher_period.start(PeriodId(1));
         }
 
         coordinator
@@ -263,7 +264,7 @@ mod tests {
 
         {
             let mut state = coordinator.state.write().await;
-            state.current_period = Some(PeriodId(1));
+            state.publisher_period.start(PeriodId(1));
         }
 
         coordinator
@@ -278,5 +279,95 @@ mod tests {
 
         let state = coordinator.state.read().await;
         assert_eq!(state.pending.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn handle_start_instance_rejects_period_before_start_period() {
+        let coordinator = DefaultCoordinator::new(
+            ChainId(77777),
+            None,
+            None,
+            None,
+            None,
+            None,
+            1000,
+            VerificationConfig::default(),
+        );
+
+        coordinator
+            .handle_start_instance(&start_instance(1))
+            .await
+            .unwrap();
+
+        let state = coordinator.state.read().await;
+        assert!(state.pending.is_empty());
+    }
+
+    #[tokio::test]
+    async fn handle_start_instance_rejects_stale_and_future_periods() {
+        let coordinator = DefaultCoordinator::new(
+            ChainId(77777),
+            None,
+            None,
+            None,
+            None,
+            None,
+            1000,
+            VerificationConfig::default(),
+        );
+
+        {
+            let mut state = coordinator.state.write().await;
+            state.publisher_period.start(PeriodId(10));
+        }
+
+        coordinator
+            .handle_start_instance(&start_instance_for_period(9, 1))
+            .await
+            .unwrap();
+        coordinator
+            .handle_start_instance(&start_instance_for_period(11, 2))
+            .await
+            .unwrap();
+
+        let state = coordinator.state.read().await;
+        assert!(state.pending.is_empty());
+    }
+
+    #[tokio::test]
+    async fn handle_start_instance_resets_sequence_on_new_period() {
+        let coordinator = DefaultCoordinator::new(
+            ChainId(77777),
+            None,
+            None,
+            None,
+            None,
+            None,
+            1000,
+            VerificationConfig::default(),
+        );
+
+        {
+            let mut state = coordinator.state.write().await;
+            state.publisher_period.start(PeriodId(1));
+        }
+
+        coordinator
+            .handle_start_instance(&start_instance(3))
+            .await
+            .unwrap();
+
+        {
+            let mut state = coordinator.state.write().await;
+            state.publisher_period.start(PeriodId(2));
+        }
+
+        coordinator
+            .handle_start_instance(&start_instance_for_period(2, 1))
+            .await
+            .unwrap();
+
+        let state = coordinator.state.read().await;
+        assert_eq!(state.pending.len(), 2);
     }
 }

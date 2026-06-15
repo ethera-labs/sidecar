@@ -3,4 +3,5 @@
 pub mod chain_overlay;
 pub mod ordering;
 pub mod pending_xt;
+pub(crate) mod publisher_period;
 pub mod xt_status;
