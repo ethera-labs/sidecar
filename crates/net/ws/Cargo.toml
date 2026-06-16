@@ -1,0 +1,16 @@
+[package]
+name = "ethera-ws"
+version = "0.1.0"
+description = "Generic reconnecting websocket subscriber"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+tokio.workspace = true
+futures.workspace = true
+tokio-tungstenite.workspace = true
+tracing.workspace = true

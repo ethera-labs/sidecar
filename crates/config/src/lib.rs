@@ -30,6 +30,9 @@ pub struct SidecarArgs {
 
     #[command(flatten)]
     pub verification: VerificationArgs,
+
+    #[command(flatten)]
+    pub permissions: PermissionsArgs,
 }
 
 /// HTTP server settings.
@@ -205,6 +208,53 @@ pub struct VerificationArgs {
     pub timeout_ms: u64,
 }
 
+/// Entity permission enforcement settings.
+///
+/// The sidecar is the single authority: it consumes the admin backend config
+/// stream and evaluates rules for local transactions (via the builder) and
+/// cross-rollup instances (in the vote path).
+#[derive(Debug, Clone, clap::Args)]
+pub struct PermissionsArgs {
+    /// Enable entity permission enforcement.
+    #[arg(
+        id = "permissions_enabled",
+        long = "permissions.enabled",
+        env = "SIDECAR_PERMISSIONS_ENABLED",
+        default_value = "false",
+        num_args = 0..=1,
+        default_missing_value = "true",
+        value_parser = clap::builder::BoolishValueParser::new(),
+    )]
+    pub enabled: bool,
+
+    /// Admin backend config-stream websocket URL (e.g. `wss://host/api/v1/config/stream`).
+    #[arg(
+        long = "permissions.config-ws-url",
+        env = "SIDECAR_PERMISSIONS_CONFIG_WS_URL",
+        default_value = ""
+    )]
+    pub config_ws_url: String,
+
+    /// Optional bearer token for authenticating to the config stream.
+    #[arg(
+        long = "permissions.auth-token",
+        env = "SIDECAR_PERMISSIONS_AUTH_TOKEN",
+        default_value = ""
+    )]
+    pub auth_token: String,
+}
+
+impl PermissionsArgs {
+    /// The auth token as an `Option`, treating empty as unset.
+    pub fn auth_token(&self) -> Option<String> {
+        if self.auth_token.is_empty() {
+            None
+        } else {
+            Some(self.auth_token.clone())
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -219,6 +269,9 @@ mod tests {
         assert_eq!(args.log.format, "json");
         assert!(!args.verification.enabled);
         assert_eq!(args.verification.url, "");
+        assert!(!args.permissions.enabled);
+        assert_eq!(args.permissions.config_ws_url, "");
+        assert_eq!(args.permissions.auth_token(), None);
     }
 
     #[test]

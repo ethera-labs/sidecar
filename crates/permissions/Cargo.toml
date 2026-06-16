@@ -1,0 +1,20 @@
+[package]
+name = "ethera-permissions"
+version = "0.1.0"
+description = "Entity permission engine and config-stream consumer for the Ethera sidecar"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+ethera-spec.workspace = true
+ethera-ws.workspace = true
+alloy.workspace = true
+arc-swap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true

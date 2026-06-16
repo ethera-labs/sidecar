@@ -19,6 +19,7 @@ use compose_metrics::SidecarMetrics;
 use compose_primitives_traits::{
     CoordinatorError, MailboxSender, PublisherClient, PutInboxBuilder, XtBuilderClient,
 };
+use ethera_permissions::PermissionEngine;
 use ethera_spec_proto::{MailboxMessage, Payload};
 
 use crate::model::chain_overlay::ChainOverlay;
@@ -141,6 +142,7 @@ pub struct DefaultCoordinator {
     pub(crate) metrics: Option<Arc<SidecarMetrics>>,
     pub(crate) verification: VerificationConfig,
     pub(crate) verification_client: Option<Client>,
+    pub(crate) permission_engine: Option<PermissionEngine>,
 }
 
 impl std::fmt::Debug for DefaultCoordinator {
@@ -184,12 +186,18 @@ impl DefaultCoordinator {
             metrics: None,
             verification_client: Self::build_verification_client(&verification),
             verification,
+            permission_engine: None,
         }
     }
 
     /// Attach a metrics instance to this coordinator.
     pub fn set_metrics(&mut self, metrics: Arc<SidecarMetrics>) {
         self.metrics = Some(metrics);
+    }
+
+    /// Attach the permission engine used to enforce cross-rollup access (UC3).
+    pub fn set_permission_engine(&mut self, engine: PermissionEngine) {
+        self.permission_engine = Some(engine);
     }
 
     /// Attach a putInbox signer used for local dependency fulfillment.

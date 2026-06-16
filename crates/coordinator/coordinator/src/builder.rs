@@ -13,6 +13,8 @@ use compose_primitives_traits::{
     CoordinatorError, MailboxSender, PublisherClient, PutInboxBuilder, XtBuilderClient,
 };
 
+use ethera_permissions::PermissionEngine;
+
 use crate::coordinator::{DefaultCoordinator, VerificationConfig};
 
 /// Builder for constructing a [`DefaultCoordinator`] with all its dependencies.
@@ -28,6 +30,7 @@ pub struct CoordinatorBuilder {
     metrics: Option<Arc<SidecarMetrics>>,
     circ_timeout_ms: u64,
     verification: VerificationConfig,
+    permission_engine: Option<PermissionEngine>,
 }
 
 impl std::fmt::Debug for CoordinatorBuilder {
@@ -53,6 +56,7 @@ impl CoordinatorBuilder {
             metrics: None,
             circ_timeout_ms: 10_000,
             verification: VerificationConfig::default(),
+            permission_engine: None,
         }
     }
 
@@ -106,6 +110,11 @@ impl CoordinatorBuilder {
         self
     }
 
+    pub fn permission_engine(mut self, engine: PermissionEngine) -> Self {
+        self.permission_engine = Some(engine);
+        self
+    }
+
     pub fn build(self) -> Result<DefaultCoordinator, CoordinatorError> {
         Self::validate_verification_config(&self.verification)?;
         let mut coord = DefaultCoordinator::new(
@@ -126,6 +135,9 @@ impl CoordinatorBuilder {
         }
         if let Some(m) = self.metrics {
             coord.set_metrics(m);
+        }
+        if let Some(engine) = self.permission_engine {
+            coord.set_permission_engine(engine);
         }
         Ok(coord)
     }

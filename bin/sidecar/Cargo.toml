@@ -22,6 +22,7 @@ compose-coordinator.workspace = true
 compose-metrics.workspace = true
 compose-publisher.workspace = true
 compose-server.workspace = true
+ethera-permissions.workspace = true
 compose-tracing.workspace = true
 prometheus-client.workspace = true
 clap.workspace = true

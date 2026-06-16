@@ -23,6 +23,7 @@ use compose_simulation::types::ChainRpcConfig;
 use compose_transport::client::QuicClient;
 use compose_transport::config::ClientConfig;
 use compose_transport::traits::Transport;
+use ethera_permissions::{ConfigStream, PermissionEngine};
 use prometheus_client::registry::Registry;
 use tokio::net::TcpListener;
 use tracing::{error, info, warn};
@@ -38,7 +39,9 @@ async fn main() -> Result<()> {
     let mut registry = Registry::default();
     let metrics = Arc::new(SidecarMetrics::new(&mut registry));
 
-    let (coordinator, quic_client) = build_coordinator(&args, metrics)?;
+    let permission_engine = build_permission_engine(&args)?;
+
+    let (coordinator, quic_client) = build_coordinator(&args, metrics, permission_engine.clone())?;
 
     coordinator.start().await?;
 
@@ -48,7 +51,20 @@ async fn main() -> Result<()> {
         spawn_publisher_connection(coordinator_arc.clone(), client);
     }
 
-    let state = AppState::from_arc(coordinator_arc).with_registry(registry);
+    if let Some(engine) = &permission_engine {
+        let stream = ConfigStream::new(
+            args.permissions.config_ws_url.clone(),
+            args.permissions.auth_token(),
+            engine.clone(),
+        );
+        info!(url = %args.permissions.config_ws_url, "Starting permission config stream");
+        tokio::spawn(stream.run());
+    }
+
+    let mut state = AppState::from_arc(coordinator_arc).with_registry(registry);
+    if let Some(engine) = permission_engine {
+        state = state.with_permission_engine(engine);
+    }
     let router = build_router(state);
 
     let listener = TcpListener::bind(&args.server.listen_addr).await?;
@@ -62,13 +78,31 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
+/// Construct the permission engine when enforcement is enabled.
+///
+/// Requires a config-stream URL: without it the engine could never receive a
+/// snapshot and, failing closed, would reject every transaction indefinitely.
+fn build_permission_engine(args: &SidecarArgs) -> Result<Option<PermissionEngine>> {
+    if !args.permissions.enabled {
+        return Ok(None);
+    }
+    if args.permissions.config_ws_url.trim().is_empty() {
+        anyhow::bail!("permissions.enabled requires permissions.config-ws-url");
+    }
+    Ok(Some(PermissionEngine::new(true)))
+}
+
 fn build_coordinator(
     args: &SidecarArgs,
     metrics: Arc<SidecarMetrics>,
+    permission_engine: Option<PermissionEngine>,
 ) -> Result<(DefaultCoordinator, Option<Arc<QuicClient>>)> {
     let chain_id = args.chain.chain_id();
 
     let mut builder = CoordinatorBuilder::new(chain_id).metrics(metrics);
+    if let Some(engine) = permission_engine {
+        builder = builder.permission_engine(engine);
+    }
     let chain_rpc = &args.chain.rpc;
     let builder_rpc = args.chain.builder_rpc_url();
     if !builder_rpc.is_empty() {

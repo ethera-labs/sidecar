@@ -12,7 +12,9 @@ members = [
     "crates/net/transport",
     "crates/net/peer",
     "crates/net/publisher",
+    "crates/net/ws",
     "crates/mailbox",
+    "crates/permissions",
     "crates/simulation",
     "crates/metrics",
     "crates/coordinator/coordinator",
@@ -29,7 +31,9 @@ compose-config = { path = "crates/config" }
 compose-transport = { path = "crates/net/transport" }
 compose-peer = { path = "crates/net/peer" }
 compose-publisher = { path = "crates/net/publisher" }
+ethera-ws = { path = "crates/net/ws" }
 compose-mailbox = { path = "crates/mailbox" }
+ethera-permissions = { path = "crates/permissions" }
 compose-simulation = { path = "crates/simulation" }
 compose-coordinator = { path = "crates/coordinator/coordinator" }
 compose-server = { path = "crates/coordinator/server" }
@@ -90,6 +94,8 @@ hex = "0.4"
 bytes = "1.0"
 prometheus-client = "0.22"
 socket2 = "0.5"
+arc-swap = "1.7"
+tokio-tungstenite = { version = "0.24", default-features = false, features = ["connect", "handshake", "rustls-tls-native-roots"] }
 
 [workspace.lints.rust]
 missing_debug_implementations = "warn"

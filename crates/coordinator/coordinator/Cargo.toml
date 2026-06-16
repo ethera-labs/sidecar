@@ -18,6 +18,7 @@ ethera-spec-proto.workspace = true
 compose-mailbox.workspace = true
 compose-simulation.workspace = true
 compose-peer.workspace = true
+ethera-permissions.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
 async-trait.workspace = true
