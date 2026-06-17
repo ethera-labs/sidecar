@@ -78,10 +78,10 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-/// Construct the permission engine when enforcement is enabled.
+/// Builds the permission engine when enforcement is enabled.
 ///
-/// Requires a config-stream URL: without it the engine could never receive a
-/// snapshot and, failing closed, would reject every transaction indefinitely.
+/// A stream URL is required so the engine can receive policy snapshots before
+/// serving permission decisions.
 fn build_permission_engine(args: &SidecarArgs) -> Result<Option<PermissionEngine>> {
     if !args.permissions.enabled {
         return Ok(None);

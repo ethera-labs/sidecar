@@ -13,8 +13,7 @@ pub struct AppState {
     pub coordinator: Arc<DefaultCoordinator>,
     /// Prometheus metrics registry (None when running without metrics).
     pub registry: Option<Arc<Mutex<Registry>>>,
-    /// Permission engine backing the builder check-tx endpoint (None when
-    /// enforcement is not configured).
+    /// Permission engine used by transaction and cross-rollup checks.
     pub permission_engine: Option<PermissionEngine>,
 }
 
@@ -45,8 +44,7 @@ impl AppState {
         self
     }
 
-    /// Whether the sidecar is ready to serve: permission enforcement, when
-    /// enabled, must have a live config snapshot.
+    /// Whether all configured subsystems are ready to serve traffic.
     pub fn is_ready(&self) -> bool {
         self.permission_engine
             .as_ref()

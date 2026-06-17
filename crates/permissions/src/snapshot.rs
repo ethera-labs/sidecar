@@ -1,4 +1,4 @@
-//! Permission config snapshot: wire format and the indexed form used for lookups.
+//! Permission policy snapshots and indexed lookup structures.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -9,8 +9,10 @@ use ethera_spec::ChainId;
 use serde::Deserialize;
 use thiserror::Error;
 
-/// Rejection reasons when indexing a received snapshot. A malformed snapshot is
-/// never partially applied: dropping a single restricted entity would fail open.
+/// Errors returned while indexing a received policy snapshot.
+///
+/// Malformed snapshots are rejected as a whole so existing policy remains
+/// intact.
 #[derive(Debug, Error)]
 pub enum SnapshotError {
     #[error("invalid wallet address: {0}")]
@@ -19,14 +21,14 @@ pub enum SnapshotError {
     UnknownRuleGroup(String),
 }
 
-/// Frame pushed by the admin backend over `/api/v1/config/stream`.
+/// Frame received from the policy stream.
 #[derive(Debug, Deserialize)]
 pub struct StreamFrame {
     pub r#type: String,
     pub data: SnapshotData,
 }
 
-/// Raw config payload as delivered by the admin backend.
+/// Raw policy snapshot payload.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SnapshotData {
@@ -60,8 +62,8 @@ pub struct WireWallet {
 pub struct WireRuleGroup {
     #[serde(default)]
     pub rule_group_id: String,
-    // `send_native` is not yet emitted by the backend; absence means allowed.
-    // Accept both the camelCase wire form and the documented snake_case name.
+    // Absence means native transfers are allowed. Accept both the camelCase
+    // wire form and the documented snake_case name.
     #[serde(default = "default_true", alias = "send_native")]
     pub send_native: bool,
     #[serde(default = "default_true")]
@@ -126,9 +128,8 @@ pub struct PolicySnapshot {
 impl PolicySnapshot {
     /// Build the indexed snapshot from a freshly received payload.
     ///
-    /// `received_at` records receipt time for diagnostics. Returns an error on any
-    /// malformed entry rather than partially applying - a skipped restricted
-    /// entity would silently fail open.
+    /// `received_at` records receipt time for diagnostics. Any malformed entry
+    /// rejects the entire snapshot.
     pub fn from_wire(data: SnapshotData, received_at: Instant) -> Result<Self, SnapshotError> {
         let groups: HashMap<String, Arc<RuleGroup>> = data
             .rule_groups

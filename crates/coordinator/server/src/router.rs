@@ -23,7 +23,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/xt/forward", post(handlers::peer::handle_forward_xt))
         .route("/xt/vote", post(handlers::peer::handle_peer_vote))
         .route("/mailbox", post(handlers::peer::handle_mailbox))
-        // Builder permission gate (UC1/UC2)
+        // Transaction permission endpoint.
         .route(
             "/permissions/check-tx",
             post(handlers::permissions::handle_check_tx),

@@ -299,11 +299,10 @@ impl DefaultCoordinator {
         Ok(())
     }
 
-    /// Enforce the cross-rollup peer whitelist (UC3) before voting.
+    /// Enforce peer-chain permissions before the local vote is emitted.
     ///
-    /// Resolves the initiating entity from each local transaction and rejects
-    /// the instance if its rule group disallows any participating peer chain.
-    /// Returns `Err(reason)` to drive a `false` vote, preserving 2PC atomicity.
+    /// Resolves the sender for each local transaction and rejects the instance
+    /// if its policy disallows any participating peer chain.
     async fn check_xt_permissions(
         &self,
         instance_id: &str,
@@ -322,8 +321,8 @@ impl DefaultCoordinator {
         };
 
         for tx in local_txs {
-            // Fail closed: a local tx whose sender cannot be recovered cannot be
-            // checked against the peer whitelist, so reject the instance.
+            // The policy cannot be evaluated without the sender, so the
+            // instance is rejected.
             let Some((sender, _)) = crate::pipeline::delivery::decode_sender_nonce(tx) else {
                 return Err("sender recovery failed");
             };

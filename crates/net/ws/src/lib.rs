@@ -1,13 +1,12 @@
 //! Generic reconnecting websocket subscriber.
 //!
-//! Owns the transport mechanics - TLS, ping/pong, auth header, and reconnect
-//! with backoff - and delegates message handling and resume behaviour to a
-//! [`MessageHandler`]. It carries no application-specific knowledge.
+//! Owns transport concerns such as TLS, authorization, reconnect backoff, and
+//! idle-timeout liveness. Message handling stays with [`MessageHandler`].
 
 use std::sync::Arc;
 use std::time::Duration;
 
-use futures::{SinkExt, StreamExt};
+use futures::StreamExt;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::http::header::{HeaderValue, AUTHORIZATION};
 use tokio_tungstenite::tungstenite::Message;
@@ -42,14 +41,24 @@ pub struct WsClient {
     base_url: String,
     auth_token: Option<String>,
     reconnect_backoff: Duration,
+    read_idle_timeout: Duration,
 }
 
 impl WsClient {
-    pub fn new(base_url: String, auth_token: Option<String>, reconnect_backoff: Duration) -> Self {
+    /// Creates a websocket client with reconnect and read-idle timeouts.
+    ///
+    /// `read_idle_timeout` must be longer than the server keep-alive interval.
+    pub fn new(
+        base_url: String,
+        auth_token: Option<String>,
+        reconnect_backoff: Duration,
+        read_idle_timeout: Duration,
+    ) -> Self {
         Self {
             base_url,
             auth_token,
             reconnect_backoff,
+            read_idle_timeout,
         }
     }
 
@@ -71,19 +80,28 @@ impl WsClient {
         info!(url = %self.base_url, "websocket connected");
         handler.on_connected();
 
-        while let Some(message) = ws.next().await {
-            match message? {
+        loop {
+            let message = match tokio::time::timeout(self.read_idle_timeout, ws.next()).await {
+                Ok(Some(message)) => message?,
+                Ok(None) => break,
+                Err(_) => {
+                    warn!(url = %self.base_url, "websocket idle timeout, reconnecting");
+                    break;
+                }
+            };
+            match message {
                 Message::Text(text) => handler.on_message(text.as_str()),
                 Message::Binary(bytes) => match std::str::from_utf8(&bytes) {
                     Ok(text) => handler.on_message(text),
                     Err(_) => warn!("ignoring non-utf8 binary frame"),
                 },
-                Message::Ping(payload) => ws.send(Message::Pong(payload)).await?,
+                // tungstenite queues pong replies for incoming pings.
+                Message::Ping(_) | Message::Pong(_) => {}
                 Message::Close(_) => {
                     info!("websocket closed by server");
                     break;
                 }
-                _ => {}
+                Message::Frame(_) => {}
             }
         }
         Ok(())
@@ -119,20 +137,27 @@ impl WsClient {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Mutex;
     use std::time::Instant;
 
     use super::*;
+    use futures::SinkExt;
     use tokio::net::TcpListener;
 
     #[derive(Default)]
     struct RecordingHandler {
         messages: Mutex<Vec<String>>,
+        disconnects: AtomicUsize,
     }
 
     impl MessageHandler for RecordingHandler {
         fn on_message(&self, text: &str) {
             self.messages.lock().unwrap().push(text.to_string());
+        }
+
+        fn on_disconnected(&self) {
+            self.disconnects.fetch_add(1, Ordering::SeqCst);
         }
     }
 
@@ -149,7 +174,12 @@ mod tests {
         });
 
         let handler = Arc::new(RecordingHandler::default());
-        let client = WsClient::new(format!("ws://{addr}/"), None, Duration::from_secs(3));
+        let client = WsClient::new(
+            format!("ws://{addr}/"),
+            None,
+            Duration::from_secs(3),
+            Duration::from_secs(5),
+        );
         tokio::spawn(client.run(handler.clone()));
 
         let deadline = Instant::now() + Duration::from_secs(2);
@@ -161,5 +191,40 @@ mod tests {
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
         assert_eq!(handler.messages.lock().unwrap().as_slice(), ["hello"]);
+    }
+
+    #[tokio::test]
+    async fn idle_connection_triggers_disconnect() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        // Accept the connection and leave it idle until the client timeout
+        // reports the disconnect.
+        tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let _ws = tokio_tungstenite::accept_async(stream).await.unwrap();
+            tokio::time::sleep(Duration::from_secs(2)).await;
+        });
+
+        let handler = Arc::new(RecordingHandler::default());
+        let client = WsClient::new(
+            format!("ws://{addr}/"),
+            None,
+            Duration::from_secs(3),
+            Duration::from_millis(150),
+        );
+        tokio::spawn(client.run(handler.clone()));
+
+        let deadline = Instant::now() + Duration::from_secs(2);
+        loop {
+            if handler.disconnects.load(Ordering::SeqCst) > 0 {
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "idle timeout did not trigger on_disconnected"
+            );
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
     }
 }

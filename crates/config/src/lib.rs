@@ -210,9 +210,8 @@ pub struct VerificationArgs {
 
 /// Entity permission enforcement settings.
 ///
-/// The sidecar is the single authority: it consumes the admin backend config
-/// stream and evaluates rules for local transactions (via the builder) and
-/// cross-rollup instances (in the vote path).
+/// The sidecar consumes policy snapshots and applies them to transaction
+/// admission and cross-rollup validation.
 #[derive(Debug, Clone, clap::Args)]
 pub struct PermissionsArgs {
     /// Enable entity permission enforcement.
@@ -227,7 +226,7 @@ pub struct PermissionsArgs {
     )]
     pub enabled: bool,
 
-    /// Admin backend config-stream websocket URL (e.g. `wss://host/api/v1/config/stream`).
+    /// Websocket URL for policy snapshot updates.
     #[arg(
         long = "permissions.config-ws-url",
         env = "SIDECAR_PERMISSIONS_CONFIG_WS_URL",
@@ -235,7 +234,7 @@ pub struct PermissionsArgs {
     )]
     pub config_ws_url: String,
 
-    /// Optional bearer token for authenticating to the config stream.
+    /// Optional bearer token for the policy stream.
     #[arg(
         long = "permissions.auth-token",
         env = "SIDECAR_PERMISSIONS_AUTH_TOKEN",

@@ -195,7 +195,7 @@ impl DefaultCoordinator {
         self.metrics = Some(metrics);
     }
 
-    /// Attach the permission engine used to enforce cross-rollup access (UC3).
+    /// Attach the permission engine used by cross-rollup validation.
     pub fn set_permission_engine(&mut self, engine: PermissionEngine) {
         self.permission_engine = Some(engine);
     }

@@ -7,7 +7,7 @@ use alloy::primitives::Address;
 use arc_swap::ArcSwapOption;
 use ethera_spec::ChainId;
 
-use crate::snapshot::{NetworkScope, PolicySnapshot};
+use crate::snapshot::{NetworkScope, PolicySnapshot, RuleGroup};
 
 /// Outcome of a permission check.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -19,7 +19,7 @@ pub enum Decision {
 /// Why a transaction or cross-rollup instance was rejected.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DenyReason {
-    /// No fresh config snapshot - fail closed.
+    /// No usable policy snapshot is available.
     ConfigUnavailable,
     EntityInactive,
     NativeSendBlocked,
@@ -68,8 +68,9 @@ impl PermissionEngine {
         self.inner.snapshot.store(Some(Arc::new(snapshot)));
     }
 
-    /// Record config-stream connection liveness. Enforcement fails closed while
-    /// disconnected, since the cached snapshot may no longer be authoritative.
+    /// Record policy stream liveness.
+    ///
+    /// Cached snapshots are ignored while the stream is disconnected.
     pub fn set_connected(&self, connected: bool) {
         self.inner.connected.store(connected, Ordering::Release);
     }
@@ -79,8 +80,7 @@ impl PermissionEngine {
         self.inner.snapshot.load().as_ref().map(|s| s.version)
     }
 
-    /// Whether enforcement can serve decisions: disabled engines are always
-    /// ready; enabled engines need a live connection and a received snapshot.
+    /// Whether the engine can serve permission decisions.
     pub fn is_ready(&self) -> bool {
         !self.inner.enabled || self.fresh().is_some()
     }
@@ -92,22 +92,32 @@ impl PermissionEngine {
         self.inner.snapshot.load_full()
     }
 
-    /// Evaluate a normal transaction (UC1 native send, UC2 contract deploy).
-    pub fn evaluate_tx(&self, from: Address, is_create: bool, has_value: bool) -> Decision {
+    /// Resolve the rule group governing `address`.
+    ///
+    /// `Ok(None)` means no policy applies to this address. `Err` is a denial
+    /// that applies before operation-specific checks run.
+    fn resolve_group(&self, address: Address) -> Result<Option<Arc<RuleGroup>>, DenyReason> {
         if !self.inner.enabled {
-            return Decision::Allow;
+            return Ok(None);
         }
         let Some(snapshot) = self.fresh() else {
-            return Decision::Deny(DenyReason::ConfigUnavailable);
+            return Err(DenyReason::ConfigUnavailable);
         };
-        let Some(wallet) = snapshot.wallet(&from) else {
-            return Decision::Allow;
+        let Some(wallet) = snapshot.wallet(&address) else {
+            return Ok(None);
         };
         if !wallet.entity_active {
-            return Decision::Deny(DenyReason::EntityInactive);
+            return Err(DenyReason::EntityInactive);
         }
-        let Some(group) = &wallet.group else {
-            return Decision::Allow;
+        Ok(wallet.group.clone())
+    }
+
+    /// Evaluate permissions for a single transaction.
+    pub fn evaluate_tx(&self, from: Address, is_create: bool, has_value: bool) -> Decision {
+        let group = match self.resolve_group(from) {
+            Ok(None) => return Decision::Allow,
+            Ok(Some(group)) => group,
+            Err(reason) => return Decision::Deny(reason),
         };
         if has_value && !group.send_native {
             return Decision::Deny(DenyReason::NativeSendBlocked);
@@ -118,23 +128,14 @@ impl PermissionEngine {
         Decision::Allow
     }
 
-    /// Evaluate a cross-rollup instance (UC3 peer chain-id whitelist) for the
-    /// initiating `sender`. `involved` is every chain participating in the XT.
+    /// Evaluate peer-chain permissions for a cross-rollup transaction.
+    ///
+    /// `involved` contains every chain participating in the transaction.
     pub fn evaluate_xt(&self, sender: Address, local: ChainId, involved: &[ChainId]) -> Decision {
-        if !self.inner.enabled {
-            return Decision::Allow;
-        }
-        let Some(snapshot) = self.fresh() else {
-            return Decision::Deny(DenyReason::ConfigUnavailable);
-        };
-        let Some(wallet) = snapshot.wallet(&sender) else {
-            return Decision::Allow;
-        };
-        if !wallet.entity_active {
-            return Decision::Deny(DenyReason::EntityInactive);
-        }
-        let Some(group) = &wallet.group else {
-            return Decision::Allow;
+        let group = match self.resolve_group(sender) {
+            Ok(None) => return Decision::Allow,
+            Ok(Some(group)) => group,
+            Err(reason) => return Decision::Deny(reason),
         };
         if group.network_scope == NetworkScope::Restricted
             && involved

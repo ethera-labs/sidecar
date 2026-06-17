@@ -1,5 +1,6 @@
-//! Config-stream consumer: the permission-specific handler that turns admin
-//! backend `/config/stream` frames into engine snapshots, driven by the generic
+//! Permission policy stream consumer.
+//!
+//! Converts snapshot frames into engine updates using the generic
 //! [`ethera_ws::WsClient`].
 
 use std::sync::Arc;
@@ -12,6 +13,9 @@ use crate::engine::PermissionEngine;
 use crate::snapshot::{PolicySnapshot, StreamFrame};
 
 const RECONNECT_BACKOFF: Duration = Duration::from_secs(3);
+// Longer than the upstream keep-alive interval, but short enough to mark stale
+// streams unavailable promptly.
+const READ_IDLE_TIMEOUT: Duration = Duration::from_secs(90);
 
 /// Applies snapshot frames into the engine, tracks connection liveness, and
 /// resumes from the last applied version.
@@ -54,7 +58,7 @@ impl MessageHandler for ConfigStreamHandler {
     }
 }
 
-/// Subscription that keeps a [`PermissionEngine`] fed from the admin backend.
+/// Subscription that keeps a [`PermissionEngine`] updated from the policy stream.
 #[derive(Debug)]
 pub struct ConfigStream {
     client: WsClient,
@@ -64,7 +68,7 @@ pub struct ConfigStream {
 impl ConfigStream {
     pub fn new(url: String, auth_token: Option<String>, engine: PermissionEngine) -> Self {
         Self {
-            client: WsClient::new(url, auth_token, RECONNECT_BACKOFF),
+            client: WsClient::new(url, auth_token, RECONNECT_BACKOFF, READ_IDLE_TIMEOUT),
             handler: Arc::new(ConfigStreamHandler { engine }),
         }
     }

@@ -13,9 +13,10 @@ pub async fn handle_health() -> Json<Value> {
     Json(json!({ "status": "ok" }))
 }
 
-/// GET /ready - readiness probe. Returns 503 while permission enforcement is
-/// enabled but the config snapshot is unavailable, so the builder gate (which
-/// fails closed) is not left rejecting every transaction silently.
+/// GET /ready - readiness probe.
+///
+/// Permission enforcement requires an active policy snapshot before the service
+/// is reported as ready.
 pub async fn handle_ready(State(state): State<AppState>) -> Response {
     if state.is_ready() {
         (StatusCode::OK, Json(json!({ "status": "ready" }))).into_response()

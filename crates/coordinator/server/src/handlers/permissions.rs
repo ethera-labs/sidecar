@@ -1,4 +1,4 @@
-//! Permission check endpoint called by the builder before pool admission.
+//! Permission check endpoint for transaction admission.
 
 use alloy::primitives::Address;
 use axum::extract::State;
@@ -28,10 +28,10 @@ pub struct CheckTxResponse {
     pub config_version: Option<u64>,
 }
 
-/// POST /permissions/check-tx - evaluate UC1 (native send) and UC2 (deploy)
-/// for a single transaction. Fails closed: if this sidecar has no engine the
-/// caller asked for a check it cannot answer, so the request errors (the builder
-/// treats any error as a denial).
+/// POST /permissions/check-tx - evaluate transaction permissions.
+///
+/// The handler returns an error when enforcement is not configured because the
+/// request cannot be answered authoritatively.
 pub async fn handle_check_tx(
     State(state): State<AppState>,
     Json(req): Json<CheckTxRequest>,

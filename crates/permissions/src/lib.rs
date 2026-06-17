@@ -1,9 +1,7 @@
 //! Entity permission enforcement for the Ethera sidecar.
 //!
-//! The sidecar is the single authority for permission rules: it consumes the
-//! admin backend config stream into an in-memory snapshot and evaluates it for
-//! both local transactions (via the builder choke point) and cross-rollup
-//! instances (via the 2PC vote path).
+//! The sidecar stores policy snapshots in memory and evaluates them for local
+//! transaction admission and cross-rollup validation.
 
 pub mod engine;
 pub mod snapshot;
