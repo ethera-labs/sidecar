@@ -1,5 +1,5 @@
 [package]
-name = "compose-peer"
+name = "sidecar-peer"
 version = "0.1.0"
 description = "Peer-sidecar coordination types and HTTP coordinator client abstractions"
 edition.workspace = true
@@ -10,7 +10,7 @@ license.workspace = true
 workspace = true
 
 [dependencies]
-compose-primitives-traits.workspace = true
+sidecar-primitives-traits.workspace = true
 ethera-spec.workspace = true
 ethera-spec-proto.workspace = true
 async-trait.workspace = true

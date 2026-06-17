@@ -4,7 +4,7 @@ use ethera_spec::{PeriodId, SuperblockNumber};
 use tracing::{error, info};
 
 use crate::coordinator::DefaultCoordinator;
-use compose_primitives_traits::CoordinatorError;
+use sidecar_primitives_traits::CoordinatorError;
 
 impl DefaultCoordinator {
     /// Handle a new period from the publisher. Aborts any stale undecided

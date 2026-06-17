@@ -5,8 +5,8 @@ use crate::{
     model::pending_xt::PendingXt,
     pipeline::delivery::deps_for_chain,
 };
-use compose_primitives::CrossRollupDependency;
-use compose_primitives_traits::CoordinatorError;
+use sidecar_primitives::CrossRollupDependency;
+use sidecar_primitives_traits::CoordinatorError;
 use tracing::{info, warn};
 
 #[derive(Debug, Clone)]
@@ -243,8 +243,8 @@ mod tests {
 
     use alloy::primitives::{Address, U256};
     use async_trait::async_trait;
-    use compose_primitives_traits::PutInboxBuilder;
     use ethera_spec::{ChainId, PeriodId, SequenceNumber};
+    use sidecar_primitives_traits::PutInboxBuilder;
     use tokio::sync::Mutex;
 
     use crate::coordinator::VerificationConfig;

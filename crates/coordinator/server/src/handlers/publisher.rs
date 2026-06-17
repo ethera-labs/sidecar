@@ -3,10 +3,10 @@
 use std::sync::Arc;
 
 use bytes::Bytes;
-use compose_coordinator::coordinator::DefaultCoordinator;
 use ethera_spec::{PeriodId, SuperblockNumber};
 use ethera_spec_proto::Payload;
 use prost::Message;
+use sidecar_coordinator::coordinator::DefaultCoordinator;
 use tracing::{debug, error, warn};
 
 /// Dispatch an inbound protobuf message from the publisher connection.

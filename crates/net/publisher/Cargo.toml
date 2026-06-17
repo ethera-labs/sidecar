@@ -1,5 +1,5 @@
 [package]
-name = "compose-publisher"
+name = "sidecar-publisher"
 version = "0.1.0"
 description = "Publisher client connection for SP communication"
 edition.workspace = true
@@ -10,10 +10,10 @@ license.workspace = true
 workspace = true
 
 [dependencies]
-compose-primitives-traits.workspace = true
+sidecar-primitives-traits.workspace = true
 ethera-spec.workspace = true
 ethera-spec-proto.workspace = true
-compose-transport.workspace = true
+sidecar-transport.workspace = true
 bytes.workspace = true
 prost.workspace = true
 async-trait.workspace = true

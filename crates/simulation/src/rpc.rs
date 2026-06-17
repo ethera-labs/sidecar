@@ -14,13 +14,13 @@ use alloy_rpc_types_trace::geth::{
     PreStateFrame,
 };
 use async_trait::async_trait;
-use compose_mailbox::overrides::{build_mailbox_state_overrides, merge_overrides_owned};
-use compose_primitives::{CrossRollupDependency, CrossRollupMessage, SimulationResult};
 use ethera_spec::ChainId;
 use reqwest::Client;
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
 use serde_json::{json, Value};
+use sidecar_mailbox::overrides::{build_mailbox_state_overrides, merge_overrides_owned};
+use sidecar_primitives::{CrossRollupDependency, CrossRollupMessage, SimulationResult};
 use tracing::{debug, enabled, trace, warn, Level};
 
 use crate::error::SimulationError;
@@ -311,7 +311,7 @@ impl RpcSimulator {
             return (Vec::new(), Vec::new());
         };
 
-        let parsed = compose_mailbox::parser::parse_call_trace(trace, mailbox_addr, chain_id);
+        let parsed = sidecar_mailbox::parser::parse_call_trace(trace, mailbox_addr, chain_id);
 
         let dependencies = parsed
             .reads
@@ -476,8 +476,8 @@ mod tests {
     use alloy::primitives::B256;
     use alloy::sol_types::SolCall;
     use alloy_rpc_types_trace::geth::AccountState;
-    use compose_mailbox::contract::{readMessageCall, MessageHeader};
     use serde_json::json;
+    use sidecar_mailbox::contract::{readMessageCall, MessageHeader};
     use std::collections::BTreeMap;
 
     fn read_calldata(src_chain: u64, dest_chain: u64) -> String {

@@ -2,7 +2,7 @@
 
 use alloy::primitives::Address;
 use async_trait::async_trait;
-use compose_primitives::CrossRollupDependency;
+use sidecar_primitives::CrossRollupDependency;
 
 use crate::error::CoordinatorError;
 

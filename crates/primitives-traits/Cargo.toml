@@ -1,5 +1,5 @@
 [package]
-name = "compose-primitives-traits"
+name = "sidecar-primitives-traits"
 version = "0.1.0"
 description = "Shared traits and error types for sidecar coordination"
 edition.workspace = true
@@ -11,7 +11,7 @@ workspace = true
 
 [dependencies]
 alloy.workspace = true
-compose-primitives.workspace = true
+sidecar-primitives.workspace = true
 ethera-spec.workspace = true
 ethera-spec-proto.workspace = true
 async-trait.workspace = true

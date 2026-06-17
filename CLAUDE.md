@@ -30,7 +30,7 @@ Run a single test:
 
 ```sh
 cargo test -p <crate-name> <test_name>
-# e.g.: cargo test -p compose-coordinator submission
+# e.g.: cargo test -p sidecar-coordinator submission
 ```
 
 Install optional dev tools before running `ci-full`:
@@ -50,7 +50,7 @@ just install-hooks  # installs pre-commit hooks (requires: pip install pre-commi
 
 ## Architecture
 
-The workspace contains one binary and many library crates, all prefixed `compose-*`:
+The workspace contains one binary and many library crates, all prefixed `sidecar-*`:
 
 ```
 bin/sidecar              - binary entrypoint: wires up all crates and starts HTTP + QUIC
@@ -65,7 +65,9 @@ crates/
     transport            - QUIC client/server, TLS (quinn + rustls + rcgen), framing
     publisher            - wraps QuicClient for SP communication
     peer                 - HTTP client for sidecar-to-sidecar coordination
+    ws                   - generic reconnecting websocket subscriber (TLS, auth, backoff)
   mailbox               - UniversalBridgeMailbox ABI helpers, dependency matching, overrides, and in-memory queue
+  permissions            - entity permission engine and config-stream consumer
   simulation             - RPC-backed tx simulation (eth_call with state overrides)
   metrics                - Prometheus counters/histograms via prometheus-client
   tracing                - tracing-subscriber init (JSON or pretty output)
@@ -96,7 +98,7 @@ crates/
 
 ### Publisher (QUIC / SP)
 
-The sidecar optionally connects to a Shared Publisher (SP) via QUIC (`compose-transport`). Messages are length-prefixed
+The sidecar optionally connects to a Shared Publisher (SP) via QUIC (`sidecar-transport`). Messages are length-prefixed
 protobuf frames (`ethera-spec-proto`, the canonical wire format shared with the publisher). The SP pushes start-period
 and start-instance messages that drive the coordinator
 state machine.

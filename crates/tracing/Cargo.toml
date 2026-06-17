@@ -1,5 +1,5 @@
 [package]
-name = "compose-tracing"
+name = "sidecar-tracing"
 version = "0.1.0"
 description = "Tracing subscriber setup and logging macro re-exports for Compose services"
 edition.workspace = true

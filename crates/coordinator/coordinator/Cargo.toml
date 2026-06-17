@@ -1,5 +1,5 @@
 [package]
-name = "compose-coordinator"
+name = "sidecar-coordinator"
 version = "0.1.0"
 description = "Core sidecar coordinator for SCP/SBCP instance lifecycle, simulation, voting, and builder control"
 edition.workspace = true
@@ -10,15 +10,15 @@ license.workspace = true
 workspace = true
 
 [dependencies]
-compose-primitives.workspace = true
-compose-primitives-traits.workspace = true
-compose-metrics.workspace = true
+sidecar-primitives.workspace = true
+sidecar-primitives-traits.workspace = true
+sidecar-metrics.workspace = true
 ethera-spec.workspace = true
 ethera-spec-proto.workspace = true
-compose-mailbox.workspace = true
-compose-simulation.workspace = true
-compose-peer.workspace = true
-ethera-permissions.workspace = true
+sidecar-mailbox.workspace = true
+sidecar-simulation.workspace = true
+sidecar-peer.workspace = true
+sidecar-permissions.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
 async-trait.workspace = true

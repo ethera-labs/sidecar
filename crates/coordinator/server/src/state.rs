@@ -2,9 +2,9 @@
 
 use std::sync::Arc;
 
-use compose_coordinator::coordinator::DefaultCoordinator;
-use ethera_permissions::PermissionEngine;
 use prometheus_client::registry::Registry;
+use sidecar_coordinator::coordinator::DefaultCoordinator;
+use sidecar_permissions::PermissionEngine;
 use tokio::sync::Mutex;
 
 /// Shared application state passed to all HTTP handlers.

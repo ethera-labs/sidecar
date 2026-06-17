@@ -1,5 +1,5 @@
 [package]
-name = "compose-mailbox"
+name = "sidecar-mailbox"
 version = "0.1.0"
 description = "Mailbox ABI helpers, dependency matching, and message queue traits for sidecar coordination"
 edition.workspace = true
@@ -10,8 +10,8 @@ license.workspace = true
 workspace = true
 
 [dependencies]
-compose-primitives.workspace = true
-compose-primitives-traits.workspace = true
+sidecar-primitives.workspace = true
+sidecar-primitives-traits.workspace = true
 ethera-spec.workspace = true
 ethera-spec-proto.workspace = true
 tokio.workspace = true

@@ -1,5 +1,5 @@
 [package]
-name = "compose-config"
+name = "sidecar-config"
 version = "0.1.0"
 description = "Configuration types and loading utilities for the Compose sidecar"
 edition.workspace = true

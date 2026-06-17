@@ -7,7 +7,7 @@ use tracing_subscriber::{fmt, EnvFilter};
 
 /// Initialize the global tracing subscriber.
 ///
-/// - `level`: filter string (e.g. `"info"`, `"debug"`, `"compose_coordinator=debug,info"`).
+/// - `level`: filter string (e.g. `"info"`, `"debug"`, `"sidecar_coordinator=debug,info"`).
 /// - `format`: either `"json"` or `"pretty"`.
 pub fn init(level: &str, format: &str) {
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(level));

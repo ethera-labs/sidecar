@@ -4,7 +4,7 @@ use ethera_spec_proto::MailboxMessage;
 use tracing::{debug, warn};
 
 use crate::coordinator::DefaultCoordinator;
-use compose_primitives_traits::CoordinatorError;
+use sidecar_primitives_traits::CoordinatorError;
 
 impl DefaultCoordinator {
     /// Handle an incoming CIRC message from a peer sidecar.

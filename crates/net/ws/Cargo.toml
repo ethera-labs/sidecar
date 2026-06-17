@@ -1,5 +1,5 @@
 [package]
-name = "ethera-ws"
+name = "sidecar-ws"
 version = "0.1.0"
 description = "Generic reconnecting websocket subscriber"
 edition.workspace = true

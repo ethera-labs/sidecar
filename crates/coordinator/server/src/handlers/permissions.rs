@@ -3,8 +3,8 @@
 use alloy::primitives::Address;
 use axum::extract::State;
 use axum::Json;
-use ethera_permissions::Decision;
 use serde::{Deserialize, Serialize};
+use sidecar_permissions::Decision;
 
 use crate::error::ServerError;
 use crate::state::AppState;

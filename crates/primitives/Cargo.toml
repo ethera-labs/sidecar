@@ -1,5 +1,5 @@
 [package]
-name = "compose-primitives"
+name = "sidecar-primitives"
 version = "0.1.0"
 description = "Core protocol primitives and shared data types for Compose sidecar components"
 edition.workspace = true

@@ -1,5 +1,5 @@
 [package]
-name = "compose-server"
+name = "sidecar-server"
 version = "0.1.0"
 description = "Axum HTTP API surface for sidecar builder, peer, mailbox, and XT endpoints"
 edition.workspace = true
@@ -12,9 +12,9 @@ workspace = true
 [dependencies]
 ethera-spec.workspace = true
 ethera-spec-proto.workspace = true
-compose-coordinator.workspace = true
-compose-peer.workspace = true
-ethera-permissions.workspace = true
+sidecar-coordinator.workspace = true
+sidecar-peer.workspace = true
+sidecar-permissions.workspace = true
 prometheus-client.workspace = true
 alloy.workspace = true
 bytes.workspace = true

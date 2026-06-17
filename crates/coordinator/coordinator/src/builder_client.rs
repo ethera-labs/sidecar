@@ -7,9 +7,9 @@ use std::{
 
 use alloy::primitives::Bytes;
 use async_trait::async_trait;
-use compose_primitives_traits::{CoordinatorError, XtBuilderClient};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
+use sidecar_primitives_traits::{CoordinatorError, XtBuilderClient};
 
 const BUILDER_RPC_TIMEOUT: Duration = Duration::from_secs(2);
 

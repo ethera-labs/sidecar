@@ -4,23 +4,23 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use compose_mailbox::traits::MailboxQueue;
-use compose_peer::traits::PeerCoordinator;
-use compose_primitives::InstanceId;
-use compose_simulation::traits::Simulator;
 use ethera_spec::{ChainId, SequenceNumber};
 use prost::Message;
 use reqwest::Client;
+use sidecar_mailbox::traits::MailboxQueue;
+use sidecar_peer::traits::PeerCoordinator;
+use sidecar_primitives::InstanceId;
+use sidecar_simulation::traits::Simulator;
 use tokio::sync::{oneshot, Notify, RwLock};
 use tokio_util::task::TaskTracker;
 use tracing::{error, info, warn};
 
-use compose_metrics::SidecarMetrics;
-use compose_primitives_traits::{
+use ethera_spec_proto::{MailboxMessage, Payload};
+use sidecar_metrics::SidecarMetrics;
+use sidecar_permissions::PermissionEngine;
+use sidecar_primitives_traits::{
     CoordinatorError, MailboxSender, PublisherClient, PutInboxBuilder, XtBuilderClient,
 };
-use ethera_permissions::PermissionEngine;
-use ethera_spec_proto::{MailboxMessage, Payload};
 
 use crate::model::chain_overlay::ChainOverlay;
 use crate::model::pending_xt::PendingXt;

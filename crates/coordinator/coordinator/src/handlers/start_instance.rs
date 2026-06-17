@@ -2,16 +2,16 @@
 
 use std::collections::HashMap;
 
-use compose_primitives::InstanceId;
 use ethera_spec::{chains_from_request, ChainId, Instance as SpecInstance};
 use ethera_spec_proto::StartInstance;
+use sidecar_primitives::InstanceId;
 use tracing::{debug, error, info, warn};
 
 use crate::coordinator::DefaultCoordinator;
 use crate::model::pending_xt::PendingXt;
 use crate::pipeline::delivery::build_sender_nonce_cache;
 use crate::pipeline::submission::xt_request_fingerprint;
-use compose_primitives_traits::CoordinatorError;
+use sidecar_primitives_traits::CoordinatorError;
 
 /// Maximum number of pending XTs before new submissions are rejected.
 const MAX_PENDING_XTS: usize = 100;

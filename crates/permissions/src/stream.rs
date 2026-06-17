@@ -1,12 +1,12 @@
 //! Permission policy stream consumer.
 //!
 //! Converts snapshot frames into engine updates using the generic
-//! [`ethera_ws::WsClient`].
+//! [`sidecar_ws::WsClient`].
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use ethera_ws::{MessageHandler, WsClient};
+use sidecar_ws::{MessageHandler, WsClient};
 use tracing::{debug, warn};
 
 use crate::engine::PermissionEngine;

@@ -1,7 +1,7 @@
 //! Publisher period and `StartInstance` admission state.
 
-use compose_primitives_traits::CoordinatorError;
 use ethera_spec::{PeriodId, SequenceNumber};
+use sidecar_primitives_traits::CoordinatorError;
 
 /// Period-scoped state used to admit publisher-assigned instances.
 ///

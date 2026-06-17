@@ -14,7 +14,7 @@ use std::future::Future;
 
 use tokio::sync::Mutex;
 
-use compose_primitives_traits::CoordinatorError;
+use sidecar_primitives_traits::CoordinatorError;
 
 #[derive(Debug, Default)]
 pub(crate) struct DeferredNonceManager {

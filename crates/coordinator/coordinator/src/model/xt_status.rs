@@ -1,7 +1,7 @@
 //! Status derivation and API response types for XT state.
 
-use compose_primitives::XtStatus;
 use serde::{Deserialize, Serialize};
+use sidecar_primitives::XtStatus;
 
 use crate::model::pending_xt::PendingXt;
 
@@ -47,7 +47,7 @@ pub fn determine_xt_status(xt: &PendingXt) -> XtStatus {
 
 #[cfg(test)]
 mod tests {
-    use compose_primitives::XtStatus;
+    use sidecar_primitives::XtStatus;
 
     use crate::model::pending_xt::PendingXt;
     use crate::model::xt_status::determine_xt_status;

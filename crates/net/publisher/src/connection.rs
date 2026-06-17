@@ -2,11 +2,11 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use bytes::Bytes;
-use compose_primitives_traits::{CoordinatorError, PublisherClient};
-use compose_transport::traits::Transport;
 use ethera_spec::ChainId;
 use ethera_spec_proto::{Payload, Vote};
 use prost::Message;
+use sidecar_primitives_traits::{CoordinatorError, PublisherClient};
+use sidecar_transport::traits::Transport;
 
 /// Publisher connection implementing the `PublisherClient` trait.
 ///

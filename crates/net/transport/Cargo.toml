@@ -1,5 +1,5 @@
 [package]
-name = "compose-transport"
+name = "sidecar-transport"
 version = "0.1.0"
 description = "QUIC transport, framing, and TLS utilities for publisher and sidecar messaging"
 edition.workspace = true

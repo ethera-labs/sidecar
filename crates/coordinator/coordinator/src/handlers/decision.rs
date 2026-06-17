@@ -3,7 +3,7 @@
 use tracing::info;
 
 use crate::coordinator::DefaultCoordinator;
-use compose_primitives_traits::CoordinatorError;
+use sidecar_primitives_traits::CoordinatorError;
 
 impl DefaultCoordinator {
     /// Record a commit/abort decision for an instance.

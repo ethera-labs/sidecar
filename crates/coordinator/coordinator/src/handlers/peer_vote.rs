@@ -4,7 +4,7 @@ use ethera_spec::ChainId;
 use tracing::info;
 
 use crate::coordinator::DefaultCoordinator;
-use compose_primitives_traits::CoordinatorError;
+use sidecar_primitives_traits::CoordinatorError;
 
 impl DefaultCoordinator {
     /// Process a vote received from a peer sidecar.

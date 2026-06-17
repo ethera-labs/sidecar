@@ -1,6 +1,6 @@
 //! Per-chain state overlay tracking for local XT simulation.
 
-use compose_primitives::StateOverride;
+use sidecar_primitives::StateOverride;
 
 /// Accumulated state overlay for a chain. Gives subsequent simulations the
 /// post-state of previously committed local XTs until the overlay is cleared

@@ -1,7 +1,7 @@
 [workspace.package]
 edition = "2021"
 rust-version = "1.91"
-license = "MIT"
+license = "GPL-3.0-only"
 
 [workspace]
 members = [
@@ -24,21 +24,21 @@ members = [
 resolver = "2"
 
 [workspace.dependencies]
-# compose
-compose-primitives = { path = "crates/primitives" }
-compose-primitives-traits = { path = "crates/primitives-traits" }
-compose-config = { path = "crates/config" }
-compose-transport = { path = "crates/net/transport" }
-compose-peer = { path = "crates/net/peer" }
-compose-publisher = { path = "crates/net/publisher" }
-ethera-ws = { path = "crates/net/ws" }
-compose-mailbox = { path = "crates/mailbox" }
-ethera-permissions = { path = "crates/permissions" }
-compose-simulation = { path = "crates/simulation" }
-compose-coordinator = { path = "crates/coordinator/coordinator" }
-compose-server = { path = "crates/coordinator/server" }
-compose-metrics = { path = "crates/metrics" }
-compose-tracing = { path = "crates/tracing" }
+# Internal crates
+sidecar-primitives = { path = "crates/primitives" }
+sidecar-primitives-traits = { path = "crates/primitives-traits" }
+sidecar-config = { path = "crates/config" }
+sidecar-transport = { path = "crates/net/transport" }
+sidecar-peer = { path = "crates/net/peer" }
+sidecar-publisher = { path = "crates/net/publisher" }
+sidecar-ws = { path = "crates/net/ws" }
+sidecar-mailbox = { path = "crates/mailbox" }
+sidecar-permissions = { path = "crates/permissions" }
+sidecar-simulation = { path = "crates/simulation" }
+sidecar-coordinator = { path = "crates/coordinator/coordinator" }
+sidecar-server = { path = "crates/coordinator/server" }
+sidecar-metrics = { path = "crates/metrics" }
+sidecar-tracing = { path = "crates/tracing" }
 
 ethera-spec = { git = "https://github.com/ethera-labs/specs.git", branch = "feat/compose-rs", package = "ethera-spec", features = ["serde"] }
 ethera-spec-proto = { git = "https://github.com/ethera-labs/specs.git", branch = "feat/compose-rs", package = "ethera-spec-proto" }

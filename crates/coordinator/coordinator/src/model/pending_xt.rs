@@ -4,10 +4,10 @@ use std::collections::{HashMap, HashSet};
 use std::time::Instant;
 
 use alloy::primitives::Address;
-use compose_mailbox::matching::{DependencyKey, MailboxMessageKey};
-use compose_primitives::{CrossRollupDependency, CrossRollupMessage, InstanceId};
 use ethera_spec::{ChainId, PeriodId, SequenceNumber};
 use ethera_spec_proto::MailboxMessage;
+use sidecar_mailbox::matching::{DependencyKey, MailboxMessageKey};
+use sidecar_primitives::{CrossRollupDependency, CrossRollupMessage, InstanceId};
 
 /// A cross-chain transaction in flight, tracking its full lifecycle from
 /// submission through simulation, voting, and decision.

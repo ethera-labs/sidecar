@@ -2,8 +2,8 @@
 
 use alloy::primitives::{keccak256, map::FbBuildHasher, Address, B256, U256};
 use alloy_rpc_types_eth::state::{AccountOverride, StateOverride};
-use compose_primitives::CrossRollupDependency;
 use ethera_spec::ChainId;
+use sidecar_primitives::CrossRollupDependency;
 use std::collections::HashMap;
 
 const INBOX_MAPPING_SLOT: u64 = 5;
@@ -207,8 +207,8 @@ mod tests {
     use super::*;
     use alloy::primitives::{Address, U256};
     use alloy_rpc_types_eth::state::AccountOverride;
-    use compose_primitives::CrossRollupDependency;
     use ethera_spec::ChainId;
+    use sidecar_primitives::CrossRollupDependency;
 
     #[test]
     fn merge_overrides_combines_accounts() {

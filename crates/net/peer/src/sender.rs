@@ -3,11 +3,11 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
-use compose_primitives_traits::{CoordinatorError, MailboxSender};
 use ethera_spec::ChainId;
 use ethera_spec_proto::MailboxMessage;
 use prost::Message;
 use reqwest::Client;
+use sidecar_primitives_traits::{CoordinatorError, MailboxSender};
 use tracing::{error, info};
 
 use crate::coordinator::PeerEntry;

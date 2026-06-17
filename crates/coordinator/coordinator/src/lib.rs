@@ -11,6 +11,6 @@ pub mod model;
 mod nonce_manager;
 pub mod pipeline;
 
-pub use compose_primitives_traits::{
+pub use sidecar_primitives_traits::{
     CoordinatorError, MailboxSender, PublisherClient, PutInboxBuilder, XtBuilderClient,
 };

@@ -2,15 +2,15 @@
 
 use std::time::{Duration, Instant as StdInstant};
 
-use compose_mailbox::matching::{
-    contains_message, dependency_keys_equal, matches_dependency, DependencyKey, MailboxMessageKey,
-};
-use compose_mailbox::overrides::merge_overrides;
-use compose_mailbox::wire;
-use compose_primitives::{CrossRollupDependency, CrossRollupMessage, StateOverride};
 use ethera_spec::ChainId;
 use ethera_spec_proto::MailboxMessage;
 use serde::Serialize;
+use sidecar_mailbox::matching::{
+    contains_message, dependency_keys_equal, matches_dependency, DependencyKey, MailboxMessageKey,
+};
+use sidecar_mailbox::overrides::merge_overrides;
+use sidecar_mailbox::wire;
+use sidecar_primitives::{CrossRollupDependency, CrossRollupMessage, StateOverride};
 use tokio::time::{sleep_until, Instant};
 use tracing::{debug, error, info, warn};
 
@@ -326,7 +326,7 @@ impl DefaultCoordinator {
             let Some((sender, _)) = crate::pipeline::delivery::decode_sender_nonce(tx) else {
                 return Err("sender recovery failed");
             };
-            if let ethera_permissions::Decision::Deny(reason) =
+            if let sidecar_permissions::Decision::Deny(reason) =
                 engine.evaluate_xt(sender, self.chain_id, &involved)
             {
                 return Err(reason.as_str());
@@ -342,7 +342,7 @@ impl DefaultCoordinator {
     async fn record_simulation_state(
         &self,
         instance_id: &str,
-        result: &compose_primitives::SimulationResult,
+        result: &sidecar_primitives::SimulationResult,
         base_overrides: &StateOverride,
     ) -> StateOverride {
         let mut state = self.state.write().await;
@@ -484,7 +484,7 @@ impl DefaultCoordinator {
         &self,
         instance_id: &str,
         outbound_messages: &[CrossRollupMessage],
-    ) -> Result<(), compose_primitives_traits::CoordinatorError> {
+    ) -> Result<(), sidecar_primitives_traits::CoordinatorError> {
         if outbound_messages.is_empty() {
             return Ok(());
         }
@@ -541,7 +541,7 @@ impl DefaultCoordinator {
         &self,
         instance_id: &str,
         vote: bool,
-    ) -> Result<(), compose_primitives_traits::CoordinatorError> {
+    ) -> Result<(), sidecar_primitives_traits::CoordinatorError> {
         let standalone_mode = !self.is_publisher_connected().await;
         let mut decision_made: Option<(bool, usize, usize)> = None;
         let mut builder_command = None;
@@ -649,12 +649,12 @@ mod tests {
     use alloy_rpc_types_eth::state::AccountOverride;
     use async_trait::async_trait;
     use axum::{extract::State, http::StatusCode, routing::post, Router};
-    use compose_mailbox::wire;
-    use compose_primitives::StateOverride;
-    use compose_primitives::{CrossRollupDependency, SimulationResult};
-    use compose_simulation::error::SimulationError;
-    use compose_simulation::traits::Simulator;
     use ethera_spec::ChainId;
+    use sidecar_mailbox::wire;
+    use sidecar_primitives::StateOverride;
+    use sidecar_primitives::{CrossRollupDependency, SimulationResult};
+    use sidecar_simulation::error::SimulationError;
+    use sidecar_simulation::traits::Simulator;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::{Arc, Mutex};
     use tokio::{net::TcpListener, task::JoinHandle};

@@ -1,5 +1,5 @@
 [package]
-name = "compose-simulation"
+name = "sidecar-simulation"
 version = "0.1.0"
 description = "Transaction simulation interfaces and RPC-backed execution for Compose XT processing"
 edition.workspace = true
@@ -10,8 +10,8 @@ license.workspace = true
 workspace = true
 
 [dependencies]
-compose-primitives.workspace = true
-compose-mailbox.workspace = true
+sidecar-primitives.workspace = true
+sidecar-mailbox.workspace = true
 ethera-spec.workspace = true
 async-trait.workspace = true
 serde.workspace = true

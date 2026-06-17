@@ -5,8 +5,8 @@ use std::collections::HashMap;
 use alloy::consensus::transaction::SignerRecoverable;
 use alloy::consensus::{Transaction, TxEnvelope};
 use alloy::primitives::Address;
-use compose_primitives::CrossRollupDependency;
 use ethera_spec::ChainId;
+use sidecar_primitives::CrossRollupDependency;
 
 /// Decode the sender address and nonce from a raw RLP-encoded signed transaction.
 pub fn decode_sender_nonce(raw_tx: &[u8]) -> Option<(Address, u64)> {

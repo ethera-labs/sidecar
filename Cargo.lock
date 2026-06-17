@@ -1293,189 +1293,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "compose-config"
-version = "0.1.0"
-dependencies = [
- "clap",
- "ethera-spec",
- "thiserror 2.0.18",
-]
-
-[[package]]
-name = "compose-coordinator"
-version = "0.1.0"
-dependencies = [
- "alloy",
- "alloy-rpc-types-eth",
- "async-trait",
- "axum",
- "compose-mailbox",
- "compose-metrics",
- "compose-peer",
- "compose-primitives",
- "compose-primitives-traits",
- "compose-simulation",
- "ethera-permissions",
- "ethera-spec",
- "ethera-spec-proto",
- "hex",
- "prost",
- "reqwest",
- "serde",
- "sha2",
- "tokio",
- "tokio-util",
- "tracing",
-]
-
-[[package]]
-name = "compose-mailbox"
-version = "0.1.0"
-dependencies = [
- "alloy",
- "alloy-rpc-types-eth",
- "async-trait",
- "compose-primitives",
- "compose-primitives-traits",
- "ethera-spec",
- "ethera-spec-proto",
- "hex",
- "reqwest",
- "serde_json",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "compose-metrics"
-version = "0.1.0"
-dependencies = [
- "prometheus-client",
-]
-
-[[package]]
-name = "compose-peer"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "compose-primitives-traits",
- "ethera-spec",
- "ethera-spec-proto",
- "futures",
- "hex",
- "prost",
- "reqwest",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tracing",
-]
-
-[[package]]
-name = "compose-primitives"
-version = "0.1.0"
-dependencies = [
- "alloy",
- "alloy-rpc-types-eth",
- "ethera-spec",
- "hex",
- "serde",
- "sha2",
-]
-
-[[package]]
-name = "compose-primitives-traits"
-version = "0.1.0"
-dependencies = [
- "alloy",
- "async-trait",
- "compose-primitives",
- "ethera-spec",
- "ethera-spec-proto",
- "thiserror 2.0.18",
-]
-
-[[package]]
-name = "compose-publisher"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "bytes",
- "compose-primitives-traits",
- "compose-transport",
- "ethera-spec",
- "ethera-spec-proto",
- "prost",
-]
-
-[[package]]
-name = "compose-server"
-version = "0.1.0"
-dependencies = [
- "alloy",
- "axum",
- "bytes",
- "compose-coordinator",
- "compose-peer",
- "ethera-permissions",
- "ethera-spec",
- "ethera-spec-proto",
- "hex",
- "prometheus-client",
- "prost",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tokio",
- "tower-http",
- "tracing",
-]
-
-[[package]]
-name = "compose-simulation"
-version = "0.1.0"
-dependencies = [
- "alloy",
- "alloy-rpc-types-eth",
- "alloy-rpc-types-trace",
- "async-trait",
- "compose-mailbox",
- "compose-primitives",
- "ethera-spec",
- "reqwest",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "compose-tracing"
-version = "0.1.0"
-dependencies = [
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "compose-transport"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "bytes",
- "prost",
- "quinn",
- "rcgen",
- "rustls",
- "socket2 0.5.10",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
-]
-
-[[package]]
 name = "const-hex"
 version = "1.18.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1883,20 +1700,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ethera-permissions"
-version = "0.1.0"
-dependencies = [
- "alloy",
- "arc-swap",
- "ethera-spec",
- "ethera-ws",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tracing",
-]
-
-[[package]]
 name = "ethera-spec"
 version = "0.1.0"
 source = "git+https://github.com/ethera-labs/specs.git?branch=feat%2Fcompose-rs#f41a8189b2121737e16c234be951fcd8b58bedf6"
@@ -1911,16 +1714,6 @@ source = "git+https://github.com/ethera-labs/specs.git?branch=feat%2Fcompose-rs#
 dependencies = [
  "ethera-spec",
  "prost",
-]
-
-[[package]]
-name = "ethera-ws"
-version = "0.1.0"
-dependencies = [
- "futures",
- "tokio",
- "tokio-tungstenite",
- "tracing",
 ]
 
 [[package]]
@@ -3930,19 +3723,226 @@ dependencies = [
  "anyhow",
  "axum",
  "clap",
- "compose-config",
- "compose-coordinator",
- "compose-mailbox",
- "compose-metrics",
- "compose-peer",
- "compose-publisher",
- "compose-server",
- "compose-simulation",
- "compose-tracing",
- "compose-transport",
- "ethera-permissions",
  "prometheus-client",
+ "sidecar-config",
+ "sidecar-coordinator",
+ "sidecar-mailbox",
+ "sidecar-metrics",
+ "sidecar-peer",
+ "sidecar-permissions",
+ "sidecar-publisher",
+ "sidecar-server",
+ "sidecar-simulation",
+ "sidecar-tracing",
+ "sidecar-transport",
  "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "sidecar-config"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "ethera-spec",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "sidecar-coordinator"
+version = "0.1.0"
+dependencies = [
+ "alloy",
+ "alloy-rpc-types-eth",
+ "async-trait",
+ "axum",
+ "ethera-spec",
+ "ethera-spec-proto",
+ "hex",
+ "prost",
+ "reqwest",
+ "serde",
+ "sha2",
+ "sidecar-mailbox",
+ "sidecar-metrics",
+ "sidecar-peer",
+ "sidecar-permissions",
+ "sidecar-primitives",
+ "sidecar-primitives-traits",
+ "sidecar-simulation",
+ "tokio",
+ "tokio-util",
+ "tracing",
+]
+
+[[package]]
+name = "sidecar-mailbox"
+version = "0.1.0"
+dependencies = [
+ "alloy",
+ "alloy-rpc-types-eth",
+ "async-trait",
+ "ethera-spec",
+ "ethera-spec-proto",
+ "hex",
+ "reqwest",
+ "serde_json",
+ "sidecar-primitives",
+ "sidecar-primitives-traits",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "sidecar-metrics"
+version = "0.1.0"
+dependencies = [
+ "prometheus-client",
+]
+
+[[package]]
+name = "sidecar-peer"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "ethera-spec",
+ "ethera-spec-proto",
+ "futures",
+ "hex",
+ "prost",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sidecar-primitives-traits",
+ "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
+name = "sidecar-permissions"
+version = "0.1.0"
+dependencies = [
+ "alloy",
+ "arc-swap",
+ "ethera-spec",
+ "serde",
+ "serde_json",
+ "sidecar-ws",
+ "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
+name = "sidecar-primitives"
+version = "0.1.0"
+dependencies = [
+ "alloy",
+ "alloy-rpc-types-eth",
+ "ethera-spec",
+ "hex",
+ "serde",
+ "sha2",
+]
+
+[[package]]
+name = "sidecar-primitives-traits"
+version = "0.1.0"
+dependencies = [
+ "alloy",
+ "async-trait",
+ "ethera-spec",
+ "ethera-spec-proto",
+ "sidecar-primitives",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "sidecar-publisher"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "bytes",
+ "ethera-spec",
+ "ethera-spec-proto",
+ "prost",
+ "sidecar-primitives-traits",
+ "sidecar-transport",
+]
+
+[[package]]
+name = "sidecar-server"
+version = "0.1.0"
+dependencies = [
+ "alloy",
+ "axum",
+ "bytes",
+ "ethera-spec",
+ "ethera-spec-proto",
+ "hex",
+ "prometheus-client",
+ "prost",
+ "serde",
+ "serde_json",
+ "sidecar-coordinator",
+ "sidecar-peer",
+ "sidecar-permissions",
+ "thiserror 2.0.18",
+ "tokio",
+ "tower-http",
+ "tracing",
+]
+
+[[package]]
+name = "sidecar-simulation"
+version = "0.1.0"
+dependencies = [
+ "alloy",
+ "alloy-rpc-types-eth",
+ "alloy-rpc-types-trace",
+ "async-trait",
+ "ethera-spec",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sidecar-mailbox",
+ "sidecar-primitives",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "sidecar-tracing"
+version = "0.1.0"
+dependencies = [
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "sidecar-transport"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "bytes",
+ "prost",
+ "quinn",
+ "rcgen",
+ "rustls",
+ "socket2 0.5.10",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "sidecar-ws"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "tokio",
+ "tokio-tungstenite",
  "tracing",
 ]
 

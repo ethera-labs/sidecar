@@ -107,7 +107,7 @@ Key configuration groups:
 just test                           # cargo test --workspace
 just ci                             # fmt-check + lint + test
 just ci-full                        # adds cargo-deny and cargo-machete
-cargo test -p compose-coordinator   # single crate
+cargo test -p sidecar-coordinator   # single crate
 ```
 
 ---
@@ -136,14 +136,14 @@ inclusion confirmation):
 | `ethera_releaseXt` | sidecar → builder | Release the slot with `putInbox` + main txs to include |
 | `ethera_abortXt`   | sidecar → builder | Release the slot without inclusion                     |
 
-The SP channel is a QUIC stream carrying length-prefixed protobuf `WireMessage` frames defined in
-[`crates/proto`](./crates/proto).
+The SP channel is a QUIC stream carrying length-prefixed protobuf `Message` frames from the shared
+`ethera-spec-proto` crate (the canonical wire format shared with the publisher).
 
 ---
 
 ## Architecture
 
-The workspace is one binary and a set of focused library crates, all prefixed `compose-*`:
+The workspace is one binary and a set of focused library crates, all prefixed `sidecar-*`:
 
 ```
 bin/sidecar                - entrypoint: wires up all crates and starts HTTP + QUIC
@@ -151,7 +151,6 @@ crates/
   primitives               - shared types: ChainId, XtId, PeriodId, InstanceId, ChainState, …
   primitives-traits        - integration-boundary traits and CoordinatorError
   config                   - clap + SIDECAR_* env-var configuration
-  proto                    - protobuf wire types and conversions (prost, rollup_v2)
   coordinator/
     coordinator            - XT state machine: submission → simulation → vote → decision → delivery
     server                 - axum HTTP API (routes above)
@@ -159,7 +158,9 @@ crates/
     transport              - QUIC (quinn + rustls + rcgen), TLS, length-prefixed framing
     publisher              - SP client adapter over QUIC
     peer                   - HTTP client for sidecar-to-sidecar coordination
+    ws                     - generic reconnecting websocket subscriber (TLS, auth, backoff)
   mailbox                  - ABI helpers, dependency matching, state overrides, in-memory queue
+  permissions              - entity permission engine and config-stream consumer
   simulation               - RPC-backed simulation (debug_traceCall with mailbox overlays)
   metrics                  - Prometheus counters and histograms
   tracing                  - tracing-subscriber init (JSON or pretty)

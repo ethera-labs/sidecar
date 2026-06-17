@@ -1,5 +1,5 @@
 [package]
-name = "compose-metrics"
+name = "sidecar-metrics"
 version = "0.1.0"
 description = "Prometheus metrics for the sidecar"
 edition.workspace = true

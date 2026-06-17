@@ -4,7 +4,7 @@ use ethera_spec::PeriodId;
 use tracing::warn;
 
 use crate::coordinator::DefaultCoordinator;
-use compose_primitives_traits::CoordinatorError;
+use sidecar_primitives_traits::CoordinatorError;
 
 impl DefaultCoordinator {
     /// Abort all pending local builder reservations and reset period state.

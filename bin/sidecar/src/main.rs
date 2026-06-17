@@ -5,26 +5,26 @@ use std::time::Duration;
 
 use anyhow::Result;
 use clap::Parser;
-use compose_config::SidecarArgs;
-use compose_coordinator::builder::CoordinatorBuilder;
-use compose_coordinator::builder_client::HttpXtBuilderClient;
-use compose_coordinator::coordinator::{DefaultCoordinator, VerificationConfig};
-use compose_mailbox::put_inbox::PutInboxTxBuilder;
-use compose_mailbox::queue::InMemoryQueue;
-use compose_metrics::SidecarMetrics;
-use compose_peer::coordinator::{HttpPeerCoordinator, PeerEntry as RuntimePeerEntry};
-use compose_peer::sender::PeerMailboxSender;
-use compose_publisher::PublisherConnection;
-use compose_server::handlers::publisher::handle_publisher_message;
-use compose_server::router::build_router;
-use compose_server::state::AppState;
-use compose_simulation::rpc::RpcSimulator;
-use compose_simulation::types::ChainRpcConfig;
-use compose_transport::client::QuicClient;
-use compose_transport::config::ClientConfig;
-use compose_transport::traits::Transport;
-use ethera_permissions::{ConfigStream, PermissionEngine};
 use prometheus_client::registry::Registry;
+use sidecar_config::SidecarArgs;
+use sidecar_coordinator::builder::CoordinatorBuilder;
+use sidecar_coordinator::builder_client::HttpXtBuilderClient;
+use sidecar_coordinator::coordinator::{DefaultCoordinator, VerificationConfig};
+use sidecar_mailbox::put_inbox::PutInboxTxBuilder;
+use sidecar_mailbox::queue::InMemoryQueue;
+use sidecar_metrics::SidecarMetrics;
+use sidecar_peer::coordinator::{HttpPeerCoordinator, PeerEntry as RuntimePeerEntry};
+use sidecar_peer::sender::PeerMailboxSender;
+use sidecar_permissions::{ConfigStream, PermissionEngine};
+use sidecar_publisher::PublisherConnection;
+use sidecar_server::handlers::publisher::handle_publisher_message;
+use sidecar_server::router::build_router;
+use sidecar_server::state::AppState;
+use sidecar_simulation::rpc::RpcSimulator;
+use sidecar_simulation::types::ChainRpcConfig;
+use sidecar_transport::client::QuicClient;
+use sidecar_transport::config::ClientConfig;
+use sidecar_transport::traits::Transport;
 use tokio::net::TcpListener;
 use tracing::{error, info, warn};
 
@@ -32,7 +32,7 @@ use tracing::{error, info, warn};
 async fn main() -> Result<()> {
     let args = SidecarArgs::parse();
 
-    compose_tracing::init(&args.log.level, &args.log.format);
+    sidecar_tracing::init(&args.log.level, &args.log.format);
 
     info!("Starting sidecar");
 

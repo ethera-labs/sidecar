@@ -2,18 +2,18 @@
 
 use std::sync::Arc;
 
-use compose_mailbox::traits::MailboxQueue;
-use compose_peer::traits::PeerCoordinator;
-use compose_simulation::traits::Simulator;
 use ethera_spec::ChainId;
 use reqwest::Url;
+use sidecar_mailbox::traits::MailboxQueue;
+use sidecar_peer::traits::PeerCoordinator;
+use sidecar_simulation::traits::Simulator;
 
-use compose_metrics::SidecarMetrics;
-use compose_primitives_traits::{
+use sidecar_metrics::SidecarMetrics;
+use sidecar_primitives_traits::{
     CoordinatorError, MailboxSender, PublisherClient, PutInboxBuilder, XtBuilderClient,
 };
 
-use ethera_permissions::PermissionEngine;
+use sidecar_permissions::PermissionEngine;
 
 use crate::coordinator::{DefaultCoordinator, VerificationConfig};
 
