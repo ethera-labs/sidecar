@@ -8,10 +8,8 @@ use tracing::{debug, info};
 use crate::coordinator::DefaultCoordinator;
 use crate::model::pending_xt::PendingXt;
 use crate::pipeline::delivery::build_sender_nonce_cache;
+use crate::MAX_PENDING_XTS;
 use sidecar_primitives_traits::CoordinatorError;
-
-/// Maximum number of pending XTs before new submissions are rejected.
-const MAX_PENDING_XTS: usize = 100;
 
 impl DefaultCoordinator {
     /// Process an XT forwarded from another sidecar.

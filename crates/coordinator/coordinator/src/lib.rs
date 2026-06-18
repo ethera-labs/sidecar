@@ -11,6 +11,9 @@ pub mod model;
 mod nonce_manager;
 pub mod pipeline;
 
+/// Maximum number of pending XTs before new submissions are rejected.
+pub(crate) const MAX_PENDING_XTS: usize = 100;
+
 pub use sidecar_primitives_traits::{
     CoordinatorError, MailboxSender, PublisherClient, PutInboxBuilder, XtBuilderClient,
 };

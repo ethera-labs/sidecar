@@ -11,10 +11,8 @@ use crate::coordinator::DefaultCoordinator;
 use crate::model::pending_xt::PendingXt;
 use crate::pipeline::delivery::build_sender_nonce_cache;
 use crate::pipeline::submission::xt_request_fingerprint;
+use crate::MAX_PENDING_XTS;
 use sidecar_primitives_traits::CoordinatorError;
-
-/// Maximum number of pending XTs before new submissions are rejected.
-const MAX_PENDING_XTS: usize = 100;
 
 impl DefaultCoordinator {
     /// Process a new instance from the publisher. Validates the period and

@@ -29,6 +29,7 @@ use crate::model::xt_status::{determine_xt_status, XtStatusResponse};
 use crate::nonce_manager::DeferredNonceManager;
 use crate::pipeline::delivery::build_sender_nonce_cache;
 use crate::pipeline::submission::{build_xt_request, xt_request_fingerprint};
+use crate::MAX_PENDING_XTS;
 
 type PendingSubmissionResult = Result<InstanceId, String>;
 type PendingSubmissionSender = oneshot::Sender<PendingSubmissionResult>;
@@ -495,8 +496,6 @@ impl DefaultCoordinator {
         &self,
         txs: HashMap<ChainId, Vec<Vec<u8>>>,
     ) -> Result<String, CoordinatorError> {
-        const MAX_PENDING_XTS: usize = 100;
-
         // Compute fingerprint before acquiring the lock to detect duplicates.
         let xt_request = build_xt_request(&txs);
         let fingerprint = xt_request_fingerprint(&xt_request);
