@@ -11,6 +11,7 @@ pub mod overrides;
 pub mod parser;
 pub mod put_inbox;
 pub mod queue;
+pub mod storage;
 pub mod traits;
 pub mod types;
 pub mod wire;

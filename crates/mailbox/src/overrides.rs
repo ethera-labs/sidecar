@@ -1,16 +1,14 @@
-//! State override merge helpers for mailbox interactions.
+//! Mailbox state-override construction and merging.
 
-use alloy::primitives::{keccak256, map::FbBuildHasher, Address, B256, U256};
+use alloy::primitives::{Address, B256, U256};
 use alloy_rpc_types_eth::state::{AccountOverride, StateOverride};
 use ethera_spec::ChainId;
 use sidecar_primitives::CrossRollupDependency;
-use std::collections::HashMap;
 
-const INBOX_MAPPING_SLOT: u64 = 5;
-const CREATED_KEYS_MAPPING_SLOT: u64 = 7;
-
-/// Alloy's state-diff map type: B256 keys with a fixed-bytes hasher.
-type SlotMap = HashMap<B256, B256, FbBuildHasher<32>>;
+use crate::storage::{
+    apply_bytes_to_state_diff, mailbox_key, mapping_slot, SlotMap, CREATED_KEYS_MAPPING_SLOT,
+    INBOX_MAPPING_SLOT,
+};
 
 /// Merge `overlay` into `base`, with `overlay` taking precedence per address.
 ///
@@ -100,66 +98,6 @@ pub fn merge_overrides_owned(base: &mut StateOverride, overlay: StateOverride) {
     }
 }
 
-fn mapping_slot(key: B256, slot: u64) -> B256 {
-    let mut buf = [0u8; 64];
-    buf[..32].copy_from_slice(key.as_slice());
-    buf[32..].copy_from_slice(&U256::from(slot).to_be_bytes::<32>());
-    keccak256(buf)
-}
-
-fn encode_short_bytes(data: &[u8]) -> B256 {
-    let mut word = [0u8; 32];
-    let len = data.len().min(31);
-    word[..len].copy_from_slice(&data[..len]);
-    word[31] = (len as u8) * 2;
-    B256::from(word)
-}
-
-fn apply_bytes_to_state_diff(state_diff: &mut SlotMap, slot: B256, data: &[u8]) {
-    if data.len() <= 31 {
-        state_diff.insert(slot, encode_short_bytes(data));
-        return;
-    }
-
-    let len_word = U256::from(data.len()) * U256::from(2u64) + U256::from(1u64);
-    state_diff.insert(slot, B256::from(len_word.to_be_bytes::<32>()));
-
-    let base_slot_hash = keccak256(slot.as_slice());
-    let base_slot = U256::from_be_bytes(base_slot_hash.into());
-
-    for (i, chunk) in data.chunks(32).enumerate() {
-        let mut word = [0u8; 32];
-        word[..chunk.len()].copy_from_slice(chunk);
-        let slot_i = base_slot + U256::from(i);
-        state_diff.insert(B256::from(slot_i.to_be_bytes::<32>()), B256::from(word));
-    }
-}
-
-/// Compute the keccak256 storage key for a mailbox inbox entry.
-///
-/// The preimage layout matches the Solidity mailbox contract's key derivation:
-///
-/// ```text
-///   offset  bytes  field
-///   ──────  ─────  ─────────────────────────
-///    0      32     source_chain_id  (uint256)
-///   32      32     dest_chain_id    (uint256, = chain_id)
-///   64      20     sender           (address)
-///   84      20     receiver         (address)
-///  104      32     session_id       (uint256)
-///  136      var    label            (raw bytes)
-/// ```
-fn mailbox_key(chain_id: ChainId, dep: &CrossRollupDependency) -> B256 {
-    let mut preimage = Vec::with_capacity(32 + 32 + 20 + 20 + 32 + dep.label.len());
-    preimage.extend_from_slice(&U256::from(dep.source_chain_id.0).to_be_bytes::<32>());
-    preimage.extend_from_slice(&U256::from(chain_id.0).to_be_bytes::<32>());
-    preimage.extend_from_slice(dep.sender.as_slice());
-    preimage.extend_from_slice(dep.receiver.as_slice());
-    preimage.extend_from_slice(&dep.session_id.to_be_bytes::<32>());
-    preimage.extend_from_slice(&dep.label);
-    keccak256(preimage)
-}
-
 /// Build mailbox state overrides for fulfilled dependencies.
 ///
 /// Returns a typed `StateOverride` suitable for passing directly to
@@ -205,10 +143,6 @@ pub fn build_mailbox_state_overrides(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use alloy::primitives::{Address, U256};
-    use alloy_rpc_types_eth::state::AccountOverride;
-    use ethera_spec::ChainId;
-    use sidecar_primitives::CrossRollupDependency;
 
     #[test]
     fn merge_overrides_combines_accounts() {
@@ -235,30 +169,6 @@ mod tests {
         let acct = base.get(&addr).unwrap();
         assert_eq!(acct.nonce, Some(1));
         assert_eq!(acct.balance, Some(U256::from(0x100u64)));
-    }
-
-    #[test]
-    fn builds_mailbox_overrides_for_fulfilled_dep() {
-        let dep = CrossRollupDependency {
-            source_chain_id: ChainId(77777),
-            dest_chain_id: ChainId(88888),
-            sender: Address::repeat_byte(0x11),
-            receiver: Address::repeat_byte(0x22),
-            label: b"SEND".to_vec(),
-            data: Some(vec![1, 2, 3]),
-            session_id: U256::from(42u64),
-        };
-
-        let mailbox_addr: Address = "0xe5d5d610fb9767df117f4076444b45404201a097"
-            .parse()
-            .unwrap();
-        let overrides =
-            build_mailbox_state_overrides(ChainId(88888), mailbox_addr, &[dep]).unwrap();
-
-        let account = overrides.get(&mailbox_addr).unwrap();
-        let diff = account.state_diff.as_ref().unwrap();
-        // inbox slot + length slot entries
-        assert!(!diff.is_empty());
     }
 
     #[test]
@@ -298,5 +208,28 @@ mod tests {
         assert_eq!(diff.len(), 2);
         assert_eq!(diff.get(&slot1), Some(&val1));
         assert_eq!(diff.get(&slot2), Some(&val2));
+    }
+
+    #[test]
+    fn builds_mailbox_overrides_for_fulfilled_dep() {
+        let dep = CrossRollupDependency {
+            source_chain_id: ChainId(77777),
+            dest_chain_id: ChainId(88888),
+            sender: Address::repeat_byte(0x11),
+            receiver: Address::repeat_byte(0x22),
+            label: b"SEND".to_vec(),
+            data: Some(vec![1, 2, 3]),
+            session_id: U256::from(42u64),
+        };
+
+        let mailbox_addr: Address = "0xe5d5d610fb9767df117f4076444b45404201a097"
+            .parse()
+            .unwrap();
+        let overrides =
+            build_mailbox_state_overrides(ChainId(88888), mailbox_addr, &[dep]).unwrap();
+
+        let account = overrides.get(&mailbox_addr).unwrap();
+        let diff = account.state_diff.as_ref().unwrap();
+        assert!(!diff.is_empty());
     }
 }
