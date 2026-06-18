@@ -44,8 +44,8 @@ pub struct SnapshotData {
 pub struct WireEntity {
     #[serde(default)]
     pub is_active: bool,
-    #[serde(default)]
-    pub rule_group_id: String,
+    /// Unset (absent or null) when the entity belongs to no rule group.
+    pub rule_group_id: Option<String>,
     #[serde(default)]
     pub wallet_addresses: Vec<WireWallet>,
 }
@@ -147,14 +147,15 @@ impl PolicySnapshot {
 
         let mut wallets = HashMap::new();
         for entity in data.entities {
-            let group =
-                if entity.rule_group_id.is_empty() {
-                    None
-                } else {
-                    Some(groups.get(&entity.rule_group_id).cloned().ok_or_else(|| {
-                        SnapshotError::UnknownRuleGroup(entity.rule_group_id.clone())
-                    })?)
-                };
+            let group = match entity.rule_group_id.as_deref().filter(|id| !id.is_empty()) {
+                None => None,
+                Some(id) => Some(
+                    groups
+                        .get(id)
+                        .cloned()
+                        .ok_or_else(|| SnapshotError::UnknownRuleGroup(id.to_string()))?,
+                ),
+            };
             for wallet in entity.wallet_addresses {
                 let address = wallet
                     .address
@@ -204,6 +205,21 @@ mod tests {
             build(json),
             Err(SnapshotError::UnknownRuleGroup(_))
         ));
+    }
+
+    #[test]
+    fn tolerates_null_rule_group_id() {
+        let json = r#"{"version":1,"entities":[{"isActive":true,"ruleGroupId":null,"walletAddresses":[{"address":"0x1111111111111111111111111111111111111111"}]}],"ruleGroups":[]}"#;
+        let snapshot = build(json).unwrap();
+        let wallet = snapshot
+            .wallet(
+                &"0x1111111111111111111111111111111111111111"
+                    .parse()
+                    .unwrap(),
+            )
+            .unwrap();
+        assert!(wallet.group.is_none());
+        assert!(wallet.entity_active);
     }
 
     #[test]
