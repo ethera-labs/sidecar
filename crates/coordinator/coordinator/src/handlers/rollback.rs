@@ -59,11 +59,9 @@ impl DefaultCoordinator {
         // re-anchors against the post-rollback canonical nonce.
         self.nonce_manager.reset().await;
 
+        let rollback_err = Err("publisher submission aborted by rollback".to_string());
         for waiters in pending_submissions.into_values() {
-            Self::notify_pending_submission_waiters(
-                waiters,
-                Err("publisher submission aborted by rollback".to_string()),
-            );
+            Self::notify_pending_submission_waiters(waiters, &rollback_err);
         }
 
         Ok(())

@@ -362,8 +362,7 @@ impl RpcSimulator {
     ) -> SimulationResult {
         let top_level_ok = trace
             .get("error")
-            .map(|e| e.as_str().unwrap_or("").is_empty())
-            .unwrap_or(true);
+            .is_none_or(|e| e.as_str().unwrap_or("").is_empty());
 
         let mut error_msg = trace
             .get("error")

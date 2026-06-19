@@ -123,8 +123,8 @@ fn build_coordinator(
     if has_rpc && has_mailbox && has_key {
         match PutInboxTxBuilder::new(
             chain_id,
-            chain_rpc.to_string(),
-            universal_bridge_mailbox_address.clone(),
+            chain_rpc,
+            universal_bridge_mailbox_address,
             args.chain.coordinator_key.clone(),
         ) {
             Ok(put_inbox) => {

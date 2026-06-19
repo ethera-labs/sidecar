@@ -162,7 +162,10 @@ impl DefaultCoordinator {
     // cannot block process shutdown indefinitely.
     const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(10);
 
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "wires all collaborators; CoordinatorBuilder is the ergonomic entry point"
+    )]
     pub fn new(
         chain_id: ChainId,
         simulator: Option<Arc<dyn Simulator>>,
@@ -317,13 +320,13 @@ impl DefaultCoordinator {
             .pending_submissions
             .remove(fingerprint);
         if let Some(waiters) = waiters {
-            Self::notify_pending_submission_waiters(waiters, result);
+            Self::notify_pending_submission_waiters(waiters, &result);
         }
     }
 
     pub(crate) fn notify_pending_submission_waiters(
         waiters: Vec<PendingSubmissionSender>,
-        result: PendingSubmissionResult,
+        result: &PendingSubmissionResult,
     ) {
         for waiter in waiters {
             let _ = waiter.send(result.clone());
@@ -350,10 +353,7 @@ impl DefaultCoordinator {
 
     /// Whether the publisher connection is currently active.
     pub(crate) async fn is_publisher_connected(&self) -> bool {
-        self.publisher
-            .as_ref()
-            .map(|p| p.is_connected())
-            .unwrap_or(false)
+        self.publisher.as_ref().is_some_and(|p| p.is_connected())
     }
 
     /// In standalone mode, compute whether the instance can be decided from the

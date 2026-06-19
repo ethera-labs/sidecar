@@ -592,8 +592,7 @@ impl DefaultCoordinator {
                         .await
                         .pending
                         .get(instance_id)
-                        .map(|xt| xt.created_at.elapsed().as_secs_f64())
-                        .unwrap_or(0.0),
+                        .map_or(0.0, |xt| xt.created_at.elapsed().as_secs_f64()),
                 );
                 m.xt_pending_count.dec();
             }

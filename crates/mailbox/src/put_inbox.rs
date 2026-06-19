@@ -40,8 +40,8 @@ impl std::fmt::Debug for PutInboxTxBuilder {
 impl PutInboxTxBuilder {
     pub fn new(
         chain_id: ChainId,
-        rpc_url: String,
-        mailbox_address: String,
+        rpc_url: &str,
+        mailbox_address: &str,
         coordinator_key: String,
     ) -> Result<Self, CoordinatorError> {
         let mailbox_address: Address = mailbox_address
