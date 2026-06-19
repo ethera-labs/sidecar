@@ -444,10 +444,11 @@ impl Simulator for RpcSimulator {
         let tx_args = Self::decode_tx(tx)?;
         debug!(chain_id = %chain_id, "Simulating transaction");
 
+        // Merge the mailbox overrides once, then clone the result; each of the
+        // two trace calls needs its own owned copy.
         let mut merged_for_call = state_overrides.clone();
-        merge_overrides_owned(&mut merged_for_call, mailbox_overrides.clone());
-        let mut merged_for_prestate = state_overrides.clone();
-        merge_overrides_owned(&mut merged_for_prestate, mailbox_overrides);
+        merge_overrides_owned(&mut merged_for_call, mailbox_overrides);
+        let merged_for_prestate = merged_for_call.clone();
 
         let (trace, prestate_trace) = tokio::join!(
             self.trace_call::<Value>(

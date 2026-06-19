@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
+use bytes::Bytes;
 use ethera_spec::{ChainId, SequenceNumber};
 use reqwest::Client;
 use tracing::{error, info, warn};
@@ -54,7 +55,10 @@ impl PeerCoordinator for HttpPeerCoordinator {
         origin_seq: SequenceNumber,
     ) -> Result<(), PeerError> {
         let req = XtForwardRequest::new(instance_id.to_string(), txs, origin_chain, origin_seq);
-        let body = serde_json::to_vec(&req).map_err(|e| PeerError::Serialization(e.to_string()))?;
+        // Serialize once; per-peer clones are refcount bumps, not byte copies.
+        let body = Bytes::from(
+            serde_json::to_vec(&req).map_err(|e| PeerError::Serialization(e.to_string()))?,
+        );
 
         let urls = self.all_peer_urls("/xt/forward");
         let futs = urls.into_iter().map(|(chain_id, url)| {
@@ -109,7 +113,10 @@ impl PeerCoordinator for HttpPeerCoordinator {
             chain_id: chain_id.0,
             vote,
         };
-        let body = serde_json::to_vec(&req).map_err(|e| PeerError::Serialization(e.to_string()))?;
+        // Serialize once; per-peer clones are refcount bumps, not byte copies.
+        let body = Bytes::from(
+            serde_json::to_vec(&req).map_err(|e| PeerError::Serialization(e.to_string()))?,
+        );
 
         let urls = self.all_peer_urls("/xt/vote");
         let futs = urls.into_iter().map(|(peer_chain_id, url)| {

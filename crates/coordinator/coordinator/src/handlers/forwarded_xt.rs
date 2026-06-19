@@ -7,7 +7,6 @@ use tracing::{debug, info};
 
 use crate::coordinator::DefaultCoordinator;
 use crate::model::pending_xt::PendingXt;
-use crate::pipeline::delivery::build_sender_nonce_cache;
 use crate::MAX_PENDING_XTS;
 use sidecar_primitives_traits::CoordinatorError;
 
@@ -53,7 +52,6 @@ impl DefaultCoordinator {
         let has_local = clean_txs.contains_key(&self.chain_id);
 
         let mut xt = PendingXt::new(instance_id.to_string(), instance_id.as_bytes().to_vec());
-        xt.sender_nonces = build_sender_nonce_cache(&clean_txs);
         xt.raw_txs = clean_txs;
         xt.origin_chain = Some(origin_chain);
         xt.origin_seq = origin_seq;

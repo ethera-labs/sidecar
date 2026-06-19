@@ -3,7 +3,6 @@
 use std::collections::{HashMap, HashSet};
 use std::time::Instant;
 
-use alloy::primitives::Address;
 use ethera_spec::{ChainId, PeriodId, SequenceNumber};
 use ethera_spec_proto::MailboxMessage;
 use sidecar_mailbox::matching::{DependencyKey, MailboxMessageKey};
@@ -65,11 +64,6 @@ pub struct PendingXt {
     pub fulfilled_dep_keys: HashSet<DependencyKey>,
     /// Outbound messages from simulation.
     pub outbound_messages: Vec<CrossRollupMessage>,
-    /// Cached sender address and nonce per chain, derived from the first raw tx.
-    ///
-    /// Populated at registration to avoid repeated ECDSA recovery on every
-    /// builder lifecycle step. If recovery fails, the cache entry is omitted.
-    pub sender_nonces: HashMap<ChainId, (Address, u64)>,
 }
 
 impl PendingXt {
@@ -98,7 +92,6 @@ impl PendingXt {
             fulfilled_deps: Vec::new(),
             fulfilled_dep_keys: HashSet::new(),
             outbound_messages: Vec::new(),
-            sender_nonces: HashMap::new(),
         }
     }
 
@@ -112,8 +105,7 @@ impl PendingXt {
         self.decision == Some(true)
     }
 
-    /// Record a commit/abort decision and free simulation memory that is no
-    /// longer needed post-decision.
+    /// Record a commit/abort decision and stamp the decision time.
     pub fn record_decision(&mut self, decision: bool) {
         self.decision = Some(decision);
         self.decided_at = Some(Instant::now());

@@ -27,7 +27,6 @@ use crate::model::pending_xt::PendingXt;
 use crate::model::publisher_period::PublisherPeriod;
 use crate::model::xt_status::{determine_xt_status, XtStatusResponse};
 use crate::nonce_manager::DeferredNonceManager;
-use crate::pipeline::delivery::build_sender_nonce_cache;
 use crate::pipeline::submission::{build_xt_request, xt_request_fingerprint};
 use crate::MAX_PENDING_XTS;
 
@@ -81,14 +80,14 @@ impl CoordinatorState {
     pub(crate) const MAILBOX_BUFFER_MAX_KEYS: usize = 1024;
     pub(crate) const MAILBOX_BUFFER_MAX_PER_KEY: usize = 256;
 
-    fn new() -> Self {
+    fn new(mailbox_notify: Arc<Notify>) -> Self {
         Self {
             pending: HashMap::new(),
             publisher_period: PublisherPeriod::default(),
             last_known_blocks: HashMap::new(),
             origin_seq: SequenceNumber(0),
             chain_overlay: HashMap::new(),
-            mailbox_notify: Arc::new(Notify::new()),
+            mailbox_notify,
             submitted_fingerprints: HashMap::new(),
             pending_submissions: HashMap::new(),
             mailbox_index: HashMap::new(),
@@ -130,6 +129,9 @@ impl CoordinatorState {
 pub struct DefaultCoordinator {
     pub(crate) chain_id: ChainId,
     pub(crate) state: Arc<RwLock<CoordinatorState>>,
+    /// Shared with [`CoordinatorState::mailbox_notify`]; held here so the
+    /// dependency-wait loop can register interest without taking the state lock.
+    pub(crate) mailbox_notify: Arc<Notify>,
     pub(crate) nonce_manager: Arc<DeferredNonceManager>,
     pub(crate) simulator: Option<Arc<dyn Simulator>>,
     pub(crate) publisher: Option<Arc<dyn PublisherClient>>,
@@ -171,9 +173,11 @@ impl DefaultCoordinator {
         circ_timeout_ms: u64,
         verification: VerificationConfig,
     ) -> Self {
+        let mailbox_notify = Arc::new(Notify::new());
         Self {
             chain_id,
-            state: Arc::new(RwLock::new(CoordinatorState::new())),
+            state: Arc::new(RwLock::new(CoordinatorState::new(mailbox_notify.clone()))),
+            mailbox_notify,
             nonce_manager: Arc::new(DeferredNonceManager::new()),
             simulator,
             publisher,
@@ -271,30 +275,23 @@ impl DefaultCoordinator {
         for raw_id in &removed_raw_ids {
             state.mailbox_index.remove(raw_id);
         }
-        let stale_fps: Vec<String> = state
-            .submitted_fingerprints
-            .iter()
-            .filter(|(_, id)| !state.pending.contains_key(id.as_str()))
-            .map(|(fp, _)| fp.clone())
-            .collect();
-        for fp in stale_fps {
-            state.submitted_fingerprints.remove(&fp);
-        }
+        // Retain cross-index entries only while their owning XT is still registered.
+        // Split field borrows let `retain` consult related maps without key snapshots.
+        let CoordinatorState {
+            pending,
+            submitted_fingerprints,
+            mailbox_buffer,
+            mailbox_index,
+            ..
+        } = &mut *state;
+        submitted_fingerprints.retain(|_, id| pending.contains_key(id.as_str()));
+        mailbox_buffer.retain(|key, _| mailbox_index.contains_key(key.as_slice()));
+
         // Drop submission channels where the caller already timed out.
         state.pending_submissions.retain(|_, waiters| {
             waiters.retain(|tx| !tx.is_closed());
             !waiters.is_empty()
         });
-        // Remove orphan mailbox_buffer entries whose XTs will never arrive.
-        let orphan_keys: Vec<Vec<u8>> = state
-            .mailbox_buffer
-            .keys()
-            .filter(|key| !state.mailbox_index.contains_key(key.as_slice()))
-            .cloned()
-            .collect();
-        for key in orphan_keys {
-            state.mailbox_buffer.remove(&key);
-        }
         if let Some(m) = &self.metrics {
             m.mailbox_buffer_size.set(state.mailbox_buffer.len() as i64);
         }
@@ -536,7 +533,6 @@ impl DefaultCoordinator {
             let mut xt = PendingXt::new(id.to_string(), id.as_bytes().to_vec());
             xt.origin_chain = Some(self.chain_id);
             xt.origin_seq = seq;
-            xt.sender_nonces = build_sender_nonce_cache(&txs);
             xt.raw_txs = txs;
             // Pre-lock so only one local simulation task claims this XT.
             xt.locked_chains.insert(self.chain_id);

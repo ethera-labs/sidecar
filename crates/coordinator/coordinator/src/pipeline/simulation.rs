@@ -395,6 +395,14 @@ impl DefaultCoordinator {
         let deadline = Instant::now() + Duration::from_millis(self.circ_timeout_ms);
         let wait_started = StdInstant::now();
         loop {
+            // Arm the waiter before checking deps: `handle_mailbox_message` uses
+            // `notify_waiters` (no stored permit), so a CIRC message arriving
+            // between the check and the select below would otherwise be missed and
+            // stall the simulation until the CIRC timeout.
+            let notified = self.mailbox_notify.notified();
+            tokio::pin!(notified);
+            notified.as_mut().enable();
+
             let fulfilled = self
                 .fulfill_dependencies_from_mailbox(instance_id, deps)
                 .await;
@@ -413,15 +421,8 @@ impl DefaultCoordinator {
                 }
                 return false;
             }
-            // Clone the Arc before dropping the lock so we can call .notified()
-            // outside the critical section. This avoids missing a notification
-            // that arrives between the dependency check above and the select below.
-            let notify = {
-                let state = self.state.read().await;
-                state.mailbox_notify.clone()
-            };
             tokio::select! {
-                _ = notify.notified() => {}
+                _ = notified => {}
                 _ = sleep_until(deadline) => {
                     if let Some(m) = &self.metrics {
                         m.mailbox_wait_duration_seconds
