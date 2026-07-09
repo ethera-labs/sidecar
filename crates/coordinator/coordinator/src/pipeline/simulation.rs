@@ -169,20 +169,7 @@ impl DefaultCoordinator {
                             return;
                         }
 
-                        // A top-level `success` is not sufficient to finish the leg: an
-                        // ERC-4337 `EntryPoint.handleOps` transaction reports success even
-                        // when the inner account execution reverted (e.g. a mailbox
-                        // `readMessage` on a not-yet-delivered message -> MessageNotFound).
-                        // Gate completion on every traced read dependency being fulfilled,
-                        // otherwise fall through to the dispatch + wait + re-simulate path
-                        // exactly as for a reverting (EOA-style) leg.
-                        let all_deps_fulfilled = result.dependencies.iter().all(|dep| {
-                            fulfilled_deps
-                                .iter()
-                                .any(|fulfilled| dependency_keys_equal(fulfilled, dep))
-                        });
-
-                        if result.success && all_deps_fulfilled {
+                        if result.success {
                             if let Err(e) = self
                                 .dispatch_outbound_mailbox(instance_id, &result.outbound_messages)
                                 .await
