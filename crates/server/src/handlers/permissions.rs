@@ -1,10 +1,10 @@
 //! Permission check endpoint for transaction admission.
 
-use alloy::primitives::Address;
+use alloy::primitives::{Address, B256};
 use axum::extract::State;
 use axum::Json;
 use serde::{Deserialize, Serialize};
-use sidecar_permissions::Decision;
+use sidecar_permissions::{Decision, DenialAction};
 
 use crate::error::ServerError;
 use crate::state::AppState;
@@ -12,11 +12,14 @@ use crate::state::AppState;
 #[derive(Debug, Deserialize)]
 pub struct CheckTxRequest {
     /// Recovered transaction signer.
-    pub from: String,
+    pub from: Address,
     /// Whether the transaction creates a contract (`to == null`).
     pub is_create: bool,
     /// Whether the transaction carries native value (`value > 0`).
     pub has_value: bool,
+    /// Transaction hash used in permission-denial audit events.
+    #[serde(default)]
+    pub tx_hash: Option<B256>,
 }
 
 #[derive(Debug, Serialize)]
@@ -42,22 +45,23 @@ pub async fn handle_check_tx(
         ));
     };
 
-    let from = req
-        .from
-        .parse::<Address>()
-        .map_err(|_| ServerError::BadRequest(format!("invalid from address: {}", req.from)))?;
-
-    let response = match engine.evaluate_tx(from, req.is_create, req.has_value) {
+    let response = match engine.evaluate_tx(req.from, req.is_create, req.has_value) {
         Decision::Allow => CheckTxResponse {
             allowed: true,
             reason: None,
             config_version: engine.version(),
         },
-        Decision::Deny(reason) => CheckTxResponse {
-            allowed: false,
-            reason: Some(reason.as_str().to_string()),
-            config_version: engine.version(),
-        },
+        Decision::Deny(reason) => {
+            let action = DenialAction::from_tx(req.is_create, req.has_value);
+            state
+                .coordinator
+                .record_tx_denial(req.from, action, reason, req.tx_hash);
+            CheckTxResponse {
+                allowed: false,
+                reason: Some(reason.as_str().to_string()),
+                config_version: engine.version(),
+            }
+        }
     };
 
     Ok(Json(response))

@@ -23,6 +23,7 @@ sidecar-metrics.workspace = true
 sidecar-publisher.workspace = true
 sidecar-server.workspace = true
 sidecar-permissions.workspace = true
+sidecar-webhook.workspace = true
 sidecar-tracing.workspace = true
 prometheus-client.workspace = true
 clap.workspace = true

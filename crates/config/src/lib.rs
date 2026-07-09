@@ -241,16 +241,33 @@ pub struct PermissionsArgs {
         default_value = ""
     )]
     pub auth_token: String,
+
+    /// Webhook URL that receives permission-denial audit events.
+    #[arg(
+        long = "permissions.audit-webhook-url",
+        env = "SIDECAR_PERMISSIONS_AUDIT_WEBHOOK_URL",
+        default_value = ""
+    )]
+    pub audit_webhook_url: String,
+
+    /// Optional bearer token for the audit webhook.
+    #[arg(
+        long = "permissions.audit-webhook-auth-token",
+        env = "SIDECAR_PERMISSIONS_AUDIT_WEBHOOK_AUTH_TOKEN",
+        default_value = ""
+    )]
+    pub audit_webhook_auth_token: String,
 }
 
 impl PermissionsArgs {
-    /// The auth token as an `Option`, treating empty as unset.
+    /// The policy-stream auth token as an `Option`, treating empty as unset.
     pub fn auth_token(&self) -> Option<String> {
-        if self.auth_token.is_empty() {
-            None
-        } else {
-            Some(self.auth_token.clone())
-        }
+        (!self.auth_token.is_empty()).then(|| self.auth_token.clone())
+    }
+
+    /// The audit-webhook auth token as an `Option`, treating empty as unset.
+    pub fn audit_webhook_auth_token(&self) -> Option<String> {
+        (!self.audit_webhook_auth_token.is_empty()).then(|| self.audit_webhook_auth_token.clone())
     }
 }
 

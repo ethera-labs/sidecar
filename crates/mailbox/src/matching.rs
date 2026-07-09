@@ -7,7 +7,7 @@ use sidecar_primitives::{CrossRollupDependency, CrossRollupMessage};
 
 use crate::wire;
 
-/// Hashable key for mailbox dependencies, mirroring the six-field on-chain key.
+/// Hashable key containing the six fields used for dependency matching.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct DependencyKey {
     source_chain_id: ChainId,
@@ -60,7 +60,7 @@ impl From<&MailboxMessage> for MailboxMessageKey {
 /// Check whether a mailbox message satisfies a cross-rollup dependency.
 ///
 /// All six key fields must agree: source chain, destination chain, sender,
-/// receiver, session ID, and label - mirroring the on-chain `getKey` preimage.
+/// receiver, session ID, and label.
 pub fn matches_dependency(msg: &MailboxMessage, dep: &CrossRollupDependency) -> bool {
     if ChainId(msg.source_chain) != dep.source_chain_id {
         return false;

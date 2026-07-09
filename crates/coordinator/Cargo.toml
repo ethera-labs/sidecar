@@ -19,6 +19,7 @@ sidecar-mailbox.workspace = true
 sidecar-simulation.workspace = true
 sidecar-peer.workspace = true
 sidecar-permissions.workspace = true
+sidecar-webhook.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
 async-trait.workspace = true

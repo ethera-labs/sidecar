@@ -9,7 +9,7 @@ use prometheus_client::registry::Registry;
 use sidecar_config::SidecarArgs;
 use sidecar_coordinator::builder::CoordinatorBuilder;
 use sidecar_coordinator::builder_client::HttpXtBuilderClient;
-use sidecar_coordinator::coordinator::{DefaultCoordinator, VerificationConfig};
+use sidecar_coordinator::{DefaultCoordinator, VerificationConfig};
 use sidecar_mailbox::put_inbox::PutInboxTxBuilder;
 use sidecar_mailbox::queue::InMemoryQueue;
 use sidecar_metrics::SidecarMetrics;
@@ -25,6 +25,7 @@ use sidecar_simulation::types::ChainRpcConfig;
 use sidecar_transport::client::QuicClient;
 use sidecar_transport::config::ClientConfig;
 use sidecar_transport::traits::Transport;
+use sidecar_webhook::WebhookClient;
 use tokio::net::TcpListener;
 use tracing::{error, info, warn};
 
@@ -92,6 +93,23 @@ fn build_permission_engine(args: &SidecarArgs) -> Result<Option<PermissionEngine
     Ok(Some(PermissionEngine::new(true)))
 }
 
+const AUDIT_WEBHOOK_TIMEOUT: Duration = Duration::from_secs(2);
+const AUDIT_WEBHOOK_MAX_RETRIES: u32 = 3;
+
+/// Builds the permission-denial audit webhook client when a URL is configured.
+fn build_audit_webhook(args: &SidecarArgs) -> Option<WebhookClient> {
+    let url = args.permissions.audit_webhook_url.trim();
+    if url.is_empty() {
+        return None;
+    }
+    Some(WebhookClient::new(
+        url.to_string(),
+        args.permissions.audit_webhook_auth_token(),
+        AUDIT_WEBHOOK_TIMEOUT,
+        AUDIT_WEBHOOK_MAX_RETRIES,
+    ))
+}
+
 fn build_coordinator(
     args: &SidecarArgs,
     metrics: Arc<SidecarMetrics>,
@@ -102,6 +120,9 @@ fn build_coordinator(
     let mut builder = CoordinatorBuilder::new(chain_id).metrics(metrics);
     if let Some(engine) = permission_engine {
         builder = builder.permission_engine(engine);
+    }
+    if let Some(webhook) = build_audit_webhook(args) {
+        builder = builder.audit_webhook(webhook);
     }
     let chain_rpc = &args.chain.rpc;
     let builder_rpc = args.chain.builder_rpc_url();

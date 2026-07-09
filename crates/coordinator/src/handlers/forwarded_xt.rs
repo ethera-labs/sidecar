@@ -5,8 +5,8 @@ use std::collections::HashMap;
 use ethera_spec::{ChainId, SequenceNumber};
 use tracing::{debug, info};
 
-use crate::coordinator::DefaultCoordinator;
 use crate::model::pending_xt::PendingXt;
+use crate::DefaultCoordinator;
 use crate::MAX_PENDING_XTS;
 use sidecar_primitives_traits::CoordinatorError;
 
@@ -120,8 +120,8 @@ mod tests {
     use ethera_spec::{ChainId, SequenceNumber};
     use sidecar_primitives_traits::CoordinatorError;
 
-    use crate::coordinator::{DefaultCoordinator, VerificationConfig};
     use crate::model::pending_xt::PendingXt;
+    use crate::{DefaultCoordinator, VerificationConfig};
 
     #[tokio::test]
     async fn handle_forwarded_xt_rejects_when_at_max_pending() {

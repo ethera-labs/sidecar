@@ -301,7 +301,7 @@ impl RpcSimulator {
     /// Only *reverted* `readMessage` frames become dependencies: a read whose
     /// frame succeeded was already satisfied (on-chain state or overrides) and
     /// needs no `putInbox` fulfillment, while a reverted read is unmet even if
-    /// an ancestor frame swallowed the revert (ERC-4337 `handleOps`).
+    /// an ancestor frame swallowed the revert and the top-level call continued.
     fn extract_mailbox_data(
         &self,
         trace: &Value,
@@ -349,10 +349,9 @@ impl RpcSimulator {
     ///
     /// A simulation only counts as successful when the top-level frame
     /// succeeded AND no mailbox `readMessage` frame reverted. The second
-    /// condition matters for transactions that swallow inner reverts (the
-    /// ERC-4337 `EntryPoint` catches a failing `UserOp` and still succeeds at
-    /// the top level): on-chain the inner call would revert with
-    /// `MessageNotFound`, so the dependency must be fulfilled and the
+    /// condition matters for transactions that swallow inner reverts: the
+    /// top-level call can succeed even though an inner mailbox read reverted
+    /// with `MessageNotFound`, so the dependency must be fulfilled and the
     /// simulation retried before voting to commit.
     fn result_from_traces(
         &self,

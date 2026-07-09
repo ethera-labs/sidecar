@@ -1,9 +1,18 @@
 //! Prometheus metrics definitions for the sidecar.
 
+use prometheus_client::encoding::EncodeLabelSet;
 use prometheus_client::metrics::counter::Counter;
+use prometheus_client::metrics::family::Family;
 use prometheus_client::metrics::gauge::Gauge;
 use prometheus_client::metrics::histogram::Histogram;
 use prometheus_client::registry::Registry;
+
+/// Labels for the permission-denial counter.
+#[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelSet)]
+pub struct PermissionDenialLabels {
+    pub action: String,
+    pub reason: String,
+}
 
 /// All operational metrics exposed by the sidecar.
 #[derive(Debug)]
@@ -40,6 +49,12 @@ pub struct SidecarMetrics {
     pub xt_rejected_total: Counter<u64>,
     /// Current number of orphan mailbox buffer entries.
     pub mailbox_buffer_size: Gauge,
+    /// Permission denials, labelled by action and reason.
+    pub permission_denied_total: Family<PermissionDenialLabels, Counter<u64>>,
+    /// Permission-denial audit webhook posts that succeeded.
+    pub permission_webhook_sent_total: Counter<u64>,
+    /// Permission-denial audit webhook posts that failed after retries.
+    pub permission_webhook_failed_total: Counter<u64>,
 }
 
 impl SidecarMetrics {
@@ -174,6 +189,27 @@ impl SidecarMetrics {
             mailbox_buffer_size.clone(),
         );
 
+        let permission_denied_total = Family::<PermissionDenialLabels, Counter<u64>>::default();
+        registry.register(
+            "sidecar_permission_denied",
+            "Permission denials by action and reason",
+            permission_denied_total.clone(),
+        );
+
+        let permission_webhook_sent_total = Counter::default();
+        registry.register(
+            "sidecar_permission_webhook_sent",
+            "Permission-denial audit webhook posts that succeeded",
+            permission_webhook_sent_total.clone(),
+        );
+
+        let permission_webhook_failed_total = Counter::default();
+        registry.register(
+            "sidecar_permission_webhook_failed",
+            "Permission-denial audit webhook posts that failed after retries",
+            permission_webhook_failed_total.clone(),
+        );
+
         Self {
             xt_received_total,
             xt_decided_commit_total,
@@ -191,6 +227,9 @@ impl SidecarMetrics {
             put_inbox_build_error_total,
             xt_rejected_total,
             mailbox_buffer_size,
+            permission_denied_total,
+            permission_webhook_sent_total,
+            permission_webhook_failed_total,
         }
     }
 }

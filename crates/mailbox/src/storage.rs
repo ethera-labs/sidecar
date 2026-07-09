@@ -11,8 +11,8 @@ pub(crate) type SlotMap = HashMap<B256, B256, FbBuildHasher<32>>;
 pub(crate) const INBOX_MAPPING_SLOT: u64 = 5;
 pub(crate) const CREATED_KEYS_MAPPING_SLOT: u64 = 7;
 
-/// Storage slot of `mapping[key]` declared at base `slot`, per Solidity's
-/// layout: `keccak256(key ++ uint256(slot))`.
+/// Storage slot for a mapping entry with `key` and base `slot`:
+/// `keccak256(key ++ uint256(slot))`.
 pub(crate) fn mapping_slot(key: B256, slot: u64) -> B256 {
     let mut hasher = Keccak256::new();
     hasher.update(key);
@@ -22,7 +22,8 @@ pub(crate) fn mapping_slot(key: B256, slot: u64) -> B256 {
 
 /// Mapping key for a mailbox inbox entry, hashed from the dependency fields.
 ///
-/// The preimage matches the Solidity mailbox contract's key derivation:
+/// The preimage must match the on-chain mailbox contract's key derivation,
+/// otherwise injected state overrides land in the wrong slot:
 ///
 /// ```text
 ///   offset  bytes  field
@@ -67,8 +68,8 @@ pub(crate) fn apply_bytes_to_state_diff(state_diff: &mut SlotMap, slot: B256, da
     }
 }
 
-/// Encode `data` (≤31 bytes) in Solidity's short-`bytes` slot layout: the bytes
-/// left-aligned, with `2 * len` in the lowest byte.
+/// Encode `data` (≤31 bytes) into one storage slot: bytes left-aligned, with
+/// `2 * len` in the lowest byte.
 fn encode_short_bytes(data: &[u8]) -> B256 {
     let mut word = [0u8; 32];
     let len = data.len().min(31);

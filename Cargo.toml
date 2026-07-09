@@ -13,12 +13,13 @@ members = [
     "crates/net/peer",
     "crates/net/publisher",
     "crates/net/ws",
+    "crates/net/webhook",
     "crates/mailbox",
     "crates/permissions",
     "crates/simulation",
     "crates/metrics",
-    "crates/coordinator/coordinator",
-    "crates/coordinator/server",
+    "crates/coordinator",
+    "crates/server",
     "crates/tracing",
 ]
 resolver = "2"
@@ -32,11 +33,12 @@ sidecar-transport = { path = "crates/net/transport" }
 sidecar-peer = { path = "crates/net/peer" }
 sidecar-publisher = { path = "crates/net/publisher" }
 sidecar-ws = { path = "crates/net/ws" }
+sidecar-webhook = { path = "crates/net/webhook" }
 sidecar-mailbox = { path = "crates/mailbox" }
 sidecar-permissions = { path = "crates/permissions" }
 sidecar-simulation = { path = "crates/simulation" }
-sidecar-coordinator = { path = "crates/coordinator/coordinator" }
-sidecar-server = { path = "crates/coordinator/server" }
+sidecar-coordinator = { path = "crates/coordinator" }
+sidecar-server = { path = "crates/server" }
 sidecar-metrics = { path = "crates/metrics" }
 sidecar-tracing = { path = "crates/tracing" }
 

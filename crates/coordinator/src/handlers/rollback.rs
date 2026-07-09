@@ -3,7 +3,7 @@
 use ethera_spec::PeriodId;
 use tracing::warn;
 
-use crate::coordinator::DefaultCoordinator;
+use crate::DefaultCoordinator;
 use sidecar_primitives_traits::CoordinatorError;
 
 impl DefaultCoordinator {
@@ -72,7 +72,7 @@ impl DefaultCoordinator {
 mod tests {
     use ethera_spec::{ChainId, PeriodId};
 
-    use crate::coordinator::{DefaultCoordinator, VerificationConfig};
+    use crate::{DefaultCoordinator, VerificationConfig};
 
     #[tokio::test]
     async fn handle_rollback_closes_period() {

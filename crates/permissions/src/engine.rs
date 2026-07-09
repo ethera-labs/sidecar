@@ -6,6 +6,7 @@ use std::sync::Arc;
 use alloy::primitives::Address;
 use arc_swap::ArcSwapOption;
 use ethera_spec::ChainId;
+use serde::Serialize;
 
 use crate::snapshot::{NetworkScope, PolicySnapshot, RuleGroup};
 
@@ -17,7 +18,8 @@ pub enum Decision {
 }
 
 /// Why a transaction or cross-rollup instance was rejected.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum DenyReason {
     /// No usable policy snapshot is available.
     ConfigUnavailable,
@@ -36,6 +38,23 @@ impl DenyReason {
             Self::ContractDeployBlocked => "contract deploy blocked",
             Self::PeerChainNotWhitelisted => "peer chain not whitelisted",
         }
+    }
+
+    /// Stable machine-readable identifier for metric labels and audit payloads.
+    pub fn code(self) -> &'static str {
+        match self {
+            Self::ConfigUnavailable => "config_unavailable",
+            Self::EntityInactive => "entity_inactive",
+            Self::NativeSendBlocked => "native_send_blocked",
+            Self::ContractDeployBlocked => "contract_deploy_blocked",
+            Self::PeerChainNotWhitelisted => "peer_chain_not_whitelisted",
+        }
+    }
+
+    /// Whether the denial reflects an entity policy decision rather than the
+    /// engine being unable to evaluate (e.g. no usable config snapshot).
+    pub fn is_policy(self) -> bool {
+        !matches!(self, Self::ConfigUnavailable)
     }
 }
 

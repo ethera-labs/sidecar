@@ -58,14 +58,14 @@ crates/
   primitives             - sidecar-specific data types (InstanceId, XtStatus, CrossRollup*)
   primitives-traits      - integration boundary traits and coordinator error types
   config                 - clap CLI args + env-var config (SIDECAR_* prefix)
-  coordinator/
-    coordinator          - core XT state machine: submission → simulation → voting → decision → builder sync
-    server               - axum HTTP API (see routes below)
+  coordinator            - core XT state machine: submission → simulation → voting → decision → builder sync
+  server                 - axum HTTP API (see routes below)
   net/
     transport            - QUIC client/server, TLS (quinn + rustls + rcgen), framing
     publisher            - wraps QuicClient for SP communication
     peer                 - HTTP client for sidecar-to-sidecar coordination
     ws                   - generic reconnecting websocket subscriber (TLS, auth, backoff)
+    webhook              - generic JSON webhook client with bounded retries
   mailbox               - UniversalBridgeMailbox ABI helpers, dependency matching, overrides, and in-memory queue
   permissions            - entity permission engine and config-stream consumer
   simulation             - RPC-backed tx simulation (eth_call with state overrides)

@@ -3735,6 +3735,7 @@ dependencies = [
  "sidecar-simulation",
  "sidecar-tracing",
  "sidecar-transport",
+ "sidecar-webhook",
  "tokio",
  "tracing",
 ]
@@ -3770,6 +3771,7 @@ dependencies = [
  "sidecar-primitives",
  "sidecar-primitives-traits",
  "sidecar-simulation",
+ "sidecar-webhook",
  "tokio",
  "tokio-util",
  "tracing",
@@ -3932,6 +3934,17 @@ dependencies = [
  "rcgen",
  "rustls",
  "socket2 0.5.10",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "sidecar-webhook"
+version = "0.1.0"
+dependencies = [
+ "reqwest",
+ "serde",
  "thiserror 2.0.18",
  "tokio",
  "tracing",

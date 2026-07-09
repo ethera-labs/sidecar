@@ -1,9 +1,8 @@
 //! Helpers for synchronizing XT lifecycle events with the local builder.
 
 use crate::{
-    coordinator::{CoordinatorState, DefaultCoordinator},
-    model::pending_xt::PendingXt,
-    pipeline::delivery::deps_for_chain,
+    model::pending_xt::PendingXt, pipeline::delivery::deps_for_chain, CoordinatorState,
+    DefaultCoordinator,
 };
 use sidecar_primitives::CrossRollupDependency;
 use sidecar_primitives_traits::CoordinatorError;
@@ -247,7 +246,7 @@ mod tests {
     use sidecar_primitives_traits::PutInboxBuilder;
     use tokio::sync::Mutex;
 
-    use crate::coordinator::VerificationConfig;
+    use crate::VerificationConfig;
 
     #[derive(Debug)]
     struct TestPutInboxBuilder {

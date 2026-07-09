@@ -114,7 +114,7 @@ cargo test -p sidecar-coordinator   # single crate
 
 ## HTTP API
 
-The sidecar exposes axum routes (see [`crates/coordinator/server`](./crates/coordinator/server)):
+The sidecar exposes axum routes (see [`crates/server`](./crates/server)):
 
 | Route                    | Direction         | Purpose                                |
 |--------------------------|-------------------|----------------------------------------|
@@ -168,7 +168,7 @@ crates/
 
 ### XT lifecycle
 
-The coordinator pipeline (`crates/coordinator/coordinator/src/pipeline`) maps onto SCP directly:
+The coordinator pipeline (`crates/coordinator/src/pipeline`) maps onto SCP directly:
 
 1. **Submission** (`pipeline/submission.rs`) - fingerprint, deduplicate, persist as `PendingXt`,
    then push `ethera_submitXt(instance_id, order, txs)` to the local builder so it reserves a slot.

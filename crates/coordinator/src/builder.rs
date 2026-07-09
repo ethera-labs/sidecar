@@ -14,8 +14,9 @@ use sidecar_primitives_traits::{
 };
 
 use sidecar_permissions::PermissionEngine;
+use sidecar_webhook::WebhookClient;
 
-use crate::coordinator::{DefaultCoordinator, VerificationConfig};
+use crate::{DefaultCoordinator, VerificationConfig};
 
 /// Builder for constructing a [`DefaultCoordinator`] with all its dependencies.
 pub struct CoordinatorBuilder {
@@ -31,6 +32,7 @@ pub struct CoordinatorBuilder {
     circ_timeout_ms: u64,
     verification: VerificationConfig,
     permission_engine: Option<PermissionEngine>,
+    audit_webhook: Option<WebhookClient>,
 }
 
 impl std::fmt::Debug for CoordinatorBuilder {
@@ -57,6 +59,7 @@ impl CoordinatorBuilder {
             circ_timeout_ms: 10_000,
             verification: VerificationConfig::default(),
             permission_engine: None,
+            audit_webhook: None,
         }
     }
 
@@ -115,6 +118,11 @@ impl CoordinatorBuilder {
         self
     }
 
+    pub fn audit_webhook(mut self, webhook: WebhookClient) -> Self {
+        self.audit_webhook = Some(webhook);
+        self
+    }
+
     pub fn build(self) -> Result<DefaultCoordinator, CoordinatorError> {
         Self::validate_verification_config(&self.verification)?;
         let mut coord = DefaultCoordinator::new(
@@ -138,6 +146,9 @@ impl CoordinatorBuilder {
         }
         if let Some(engine) = self.permission_engine {
             coord.set_permission_engine(engine);
+        }
+        if let Some(webhook) = self.audit_webhook {
+            coord.set_audit_webhook(webhook);
         }
         Ok(coord)
     }

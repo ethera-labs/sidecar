@@ -7,9 +7,9 @@ use ethera_spec_proto::StartInstance;
 use sidecar_primitives::InstanceId;
 use tracing::{debug, error, info, warn};
 
-use crate::coordinator::DefaultCoordinator;
 use crate::model::pending_xt::PendingXt;
 use crate::pipeline::submission::xt_request_fingerprint;
+use crate::DefaultCoordinator;
 use crate::MAX_PENDING_XTS;
 use sidecar_primitives_traits::CoordinatorError;
 
@@ -208,7 +208,7 @@ mod tests {
     use ethera_spec::{ChainId, PeriodId};
     use ethera_spec_proto::{StartInstance, TransactionRequest, XtRequest};
 
-    use crate::coordinator::{DefaultCoordinator, VerificationConfig};
+    use crate::{DefaultCoordinator, VerificationConfig};
 
     fn start_instance(sequence_number: u64) -> StartInstance {
         let mut instance_id = [0_u8; 32];

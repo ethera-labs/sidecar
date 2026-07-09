@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use prometheus_client::registry::Registry;
-use sidecar_coordinator::coordinator::DefaultCoordinator;
+use sidecar_coordinator::DefaultCoordinator;
 use sidecar_permissions::PermissionEngine;
 use tokio::sync::Mutex;
 

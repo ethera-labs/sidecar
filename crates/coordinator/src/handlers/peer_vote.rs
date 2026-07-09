@@ -3,7 +3,7 @@
 use ethera_spec::ChainId;
 use tracing::info;
 
-use crate::coordinator::DefaultCoordinator;
+use crate::DefaultCoordinator;
 use sidecar_primitives_traits::CoordinatorError;
 
 impl DefaultCoordinator {
@@ -81,8 +81,8 @@ impl DefaultCoordinator {
 mod tests {
     use ethera_spec::ChainId;
 
-    use crate::coordinator::{DefaultCoordinator, VerificationConfig};
     use crate::model::pending_xt::PendingXt;
+    use crate::{DefaultCoordinator, VerificationConfig};
 
     #[tokio::test]
     async fn duplicate_peer_vote_is_ignored() {

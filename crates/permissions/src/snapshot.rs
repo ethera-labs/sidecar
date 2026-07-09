@@ -62,8 +62,8 @@ pub struct WireWallet {
 pub struct WireRuleGroup {
     #[serde(default)]
     pub rule_group_id: String,
-    // Absence means native transfers are allowed. Accept both the camelCase
-    // wire form and the documented snake_case name.
+    // Absence means native transfers are allowed. Accept both camelCase and
+    // snake_case wire forms.
     #[serde(default = "default_true", alias = "send_native")]
     pub send_native: bool,
     #[serde(default = "default_true")]

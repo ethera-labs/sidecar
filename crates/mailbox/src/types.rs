@@ -16,8 +16,7 @@ pub struct MailboxCall {
     pub session_id: U256,
     /// Whether the call frame itself reverted in the trace. A reverted
     /// `readMessage` is an unmet dependency even when an ancestor frame
-    /// swallows the revert (e.g. ERC-4337 `EntryPoint.handleOps` catches
-    /// inner `UserOp` reverts and the outer transaction still succeeds).
+    /// swallows the revert and the outer transaction still succeeds.
     pub reverted: bool,
 }
 

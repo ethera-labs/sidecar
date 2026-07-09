@@ -1,0 +1,17 @@
+[package]
+name = "sidecar-webhook"
+version = "0.1.0"
+description = "Generic JSON webhook client with bounded retries"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+reqwest.workspace = true
+serde.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+thiserror.workspace = true

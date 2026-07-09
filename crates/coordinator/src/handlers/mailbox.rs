@@ -3,7 +3,7 @@
 use ethera_spec_proto::MailboxMessage;
 use tracing::{debug, warn};
 
-use crate::coordinator::DefaultCoordinator;
+use crate::DefaultCoordinator;
 use sidecar_primitives_traits::CoordinatorError;
 
 impl DefaultCoordinator {
@@ -69,8 +69,8 @@ mod tests {
     use ethera_spec::ChainId;
     use ethera_spec_proto::MailboxMessage;
 
-    use crate::coordinator::{DefaultCoordinator, VerificationConfig};
     use crate::model::pending_xt::PendingXt;
+    use crate::{DefaultCoordinator, VerificationConfig};
 
     #[tokio::test]
     async fn mailbox_message_buffered_when_xt_not_yet_registered() {
